@@ -18,7 +18,8 @@ const defaultSettings = {
     maxFiles: 10,
     showNotifications: true,
     validateCache: true,
-    apiUrl: 'http://127.0.0.1:8080'
+    apiUrl: 'http://127.0.0.1:8080',
+    cachePath: '~/kv_cache'
 };
 
 
@@ -39,6 +40,7 @@ async function loadSettings() {
     $("#kv-cache-show-notifications").prop("checked", settings.showNotifications).trigger("input");
     $("#kv-cache-validate").prop("checked", settings.validateCache).trigger("input");
     $("#kv-cache-api-url").val(settings.apiUrl || defaultSettings.apiUrl).trigger("input");
+    $("#kv-cache-cache-path").val(settings.cachePath || defaultSettings.cachePath).trigger("input");
     
 }
 
@@ -123,6 +125,13 @@ function onApiUrlChange(event) {
     setTimeout(() => updateSlotsList(), 500);
 }
 
+function onCachePathChange(event) {
+    const value = $(event.target).val().trim() || defaultSettings.cachePath;
+    extension_settings[extensionName].cachePath = value;
+    saveSettingsDebounced();
+    showToast('info', `Путь к папке кеша установлен: ${value}`);
+}
+
 // Получение URL llama.cpp сервера
 function getLlamaUrl() {
     const settings = extension_settings[extensionName] || defaultSettings;
@@ -137,6 +146,10 @@ function getCurrentChatName() {
     }
     if (context.chat && context.chat.title) {
         return context.chat.title;
+    }
+    // Если имя чата не найдено, используем ID чата
+    if (context.chat && context.chat.id) {
+        return `chat_${context.chat.id}`;
     }
     return 'chat';
 }
@@ -422,6 +435,8 @@ async function loadSlotCache(slotId, filename) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 минут таймаут
         
+        console.log(`[KV Cache Manager] Загрузка кеша: слот ${slotId}, файл ${filename}`);
+        
         const response = await fetch(`${llamaUrl}/slots/${slotId}?action=restore`, {
             method: 'POST',
             headers: {
@@ -439,6 +454,7 @@ async function loadSlotCache(slotId, filename) {
             return false;
         }
         
+        console.log(`[KV Cache Manager] Кеш успешно загружен для слота ${slotId}`);
         return true;
     } catch (e) {
         if (e.name === 'AbortError') {
@@ -448,6 +464,114 @@ async function loadSlotCache(slotId, filename) {
         }
         return false;
     }
+}
+
+// Парсинг имени файла для извлечения имени чата, timestamp и slotId
+function parseCacheFilename(filename) {
+    // Формат: {chat_name}_{timestamp}_slot{slotId}.bin
+    // или: {user_name}_{chat_name}_{timestamp}_slot{slotId}.bin
+    const match = filename.match(/^(.+?)_(\d{14})_slot(\d+)\.bin$/);
+    if (match) {
+        const fullPrefix = match[1];
+        const timestamp = match[2];
+        const slotId = parseInt(match[3], 10);
+        
+        // Разделяем префикс на части
+        // Для ручных сохранений: user_chat, для автосохранений: chat
+        const parts = fullPrefix.split('_');
+        let chatName, userName = null;
+        
+        if (parts.length === 1) {
+            // Просто имя чата
+            chatName = parts[0];
+        } else {
+            // Возможно, это user_chat формат
+            // Берем последнюю часть как имя чата, остальное - имя пользователя
+            chatName = parts[parts.length - 1];
+            userName = parts.slice(0, -1).join('_');
+        }
+        
+        return {
+            chatName: chatName,
+            userName: userName,
+            timestamp: timestamp,
+            slotId: slotId,
+            isValid: true
+        };
+    }
+    return { isValid: false };
+}
+
+// Получение списка сохраненных файлов кеша из папки
+// Путь используется только для поиска файлов в расширении, 
+// так как в llama.cpp путь к папке кеша фиксирован при запуске
+async function getCacheFilesList() {
+    const settings = extension_settings[extensionName] || defaultSettings;
+    const cachePath = settings.cachePath || defaultSettings.cachePath;
+    
+    // Заменяем ~ на домашнюю директорию пользователя
+    const normalizedPath = cachePath.replace(/^~/, () => {
+        // В браузере ~ не работает, но можно использовать относительный путь
+        // Или использовать API SillyTavern для работы с файлами
+        return '';
+    });
+    
+    try {
+        // Используем API SillyTavern для получения списка файлов
+        // Обычно это /api/files/list или /api/files с параметром path
+        const apiUrl = typeof main_api !== 'undefined' ? main_api : '/api';
+        const response = await fetch(`${apiUrl}/files/list`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path: normalizedPath })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            // Фильтруем только .bin файлы
+            if (Array.isArray(data)) {
+                return data.filter(file => file.endsWith('.bin'));
+            } else if (data.files && Array.isArray(data.files)) {
+                return data.files.filter(file => file.endsWith('.bin'));
+            }
+            return [];
+        } else {
+            console.debug('[KV Cache Manager] Ошибка получения списка файлов:', response.status);
+            return [];
+        }
+    } catch (e) {
+        console.debug('[KV Cache Manager] Ошибка получения списка файлов:', e);
+        return [];
+    }
+}
+
+// Группировка файлов по имени чата и timestamp
+function groupFilesByChatAndTimestamp(files) {
+    const groups = {};
+    
+    for (const file of files) {
+        const parsed = parseCacheFilename(file);
+        if (parsed.isValid) {
+            // Ключ: chatName_timestamp
+            const key = `${parsed.chatName}_${parsed.timestamp}`;
+            if (!groups[key]) {
+                groups[key] = {
+                    chatName: parsed.chatName,
+                    userName: parsed.userName,
+                    timestamp: parsed.timestamp,
+                    files: []
+                };
+            }
+            groups[key].files.push({
+                filename: file,
+                slotId: parsed.slotId
+            });
+        }
+    }
+    
+    return groups;
 }
 
 // Проверка доступности llama.cpp сервера
@@ -536,8 +660,105 @@ async function onSaveButtonClick() {
 }
 
 async function onLoadButtonClick() {
-    showToast('info', 'Функция загрузки кеша будет реализована на следующем этапе');
-    // TODO: Реализовать загрузку кеша
+    showToast('info', 'Начинаю загрузку кеша...');
+    
+    // Проверка доступности сервера
+    const isServerAvailable = await checkServerAvailability();
+    if (!isServerAvailable) {
+        showToast('error', 'Сервер llama.cpp недоступен');
+        return;
+    }
+    
+    // Получаем список файлов
+    const filesList = await getCacheFilesList();
+    
+    if (!filesList || filesList.length === 0) {
+        showToast('warning', 'Не найдено сохранений для загрузки');
+        return;
+    }
+    
+    // Группируем файлы по имени чата и timestamp
+    const groups = groupFilesByChatAndTimestamp(filesList);
+    const groupKeys = Object.keys(groups).sort().reverse(); // Сортируем по убыванию (новые первыми)
+    
+    if (groupKeys.length === 0) {
+        showToast('warning', 'Не найдено сохранений для загрузки');
+        return;
+    }
+    
+    // Формируем список для выбора
+    const options = groupKeys.map((key, index) => {
+        const group = groups[key];
+        const date = new Date(
+            parseInt(group.timestamp.substring(0, 4)), // год
+            parseInt(group.timestamp.substring(4, 6)) - 1, // месяц (0-based)
+            parseInt(group.timestamp.substring(6, 8)), // день
+            parseInt(group.timestamp.substring(8, 10)), // час
+            parseInt(group.timestamp.substring(10, 12)), // минута
+            parseInt(group.timestamp.substring(12, 14)) // секунда
+        );
+        const dateStr = date.toLocaleString('ru-RU');
+        const slotsCount = group.files.length;
+        const displayName = group.userName 
+            ? `${group.userName}_${group.chatName}` 
+            : group.chatName;
+        return `${index + 1}. ${displayName}_${group.timestamp} (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`;
+    }).join('\n');
+    
+    const choice = prompt(`Выберите сохранение для загрузки:\n\n${options}\n\nВведите номер (1-${groupKeys.length}):`);
+    
+    if (!choice || isNaN(choice)) {
+        return;
+    }
+    
+    const index = parseInt(choice, 10) - 1;
+    if (index < 0 || index >= groupKeys.length) {
+        showToast('error', 'Неверный номер');
+        return;
+    }
+    
+    const selectedGroup = groups[groupKeys[index]];
+    const filesToLoad = selectedGroup.files.map(f => ({
+        filename: f.filename,
+        slotId: f.slotId
+    }));
+    
+    if (filesToLoad.length === 0) {
+        showToast('warning', 'Не найдено файлов для загрузки');
+        return;
+    }
+    
+    showToast('info', `Найдено ${filesToLoad.length} файлов для загрузки`);
+    console.log(`[KV Cache Manager] Начинаю загрузку ${filesToLoad.length} файлов:`, filesToLoad);
+    
+    let loadedCount = 0;
+    let errors = [];
+    
+    for (const { filename, slotId } of filesToLoad) {
+        try {
+            if (await loadSlotCache(slotId, filename)) {
+                loadedCount++;
+                console.log(`[KV Cache Manager] Загружен кеш для слота ${slotId} из файла ${filename}`);
+            } else {
+                errors.push(`слот ${slotId}`);
+            }
+        } catch (e) {
+            console.error(`[KV Cache Manager] Ошибка при загрузке слота ${slotId}:`, e);
+            errors.push(`слот ${slotId}: ${e.message}`);
+        }
+    }
+    
+    if (loadedCount > 0) {
+        if (errors.length > 0) {
+            showToast('warning', `Загружено ${loadedCount} из ${filesToLoad.length} слотов. Ошибки: ${errors.join(', ')}`);
+        } else {
+            showToast('success', `Загружено ${loadedCount} слотов`);
+        }
+        // Обновляем список слотов после загрузки
+        setTimeout(() => updateSlotsList(), 1000);
+    } else {
+        showToast('error', `Не удалось загрузить кеш. Ошибки: ${errors.join(', ')}`);
+    }
 }
 
 async function onSaveNowButtonClick() {
@@ -609,6 +830,7 @@ jQuery(async () => {
     $("#kv-cache-show-notifications").on("input", onShowNotificationsChange);
     $("#kv-cache-validate").on("input", onValidateChange);
     $("#kv-cache-api-url").on("input", onApiUrlChange);
+    $("#kv-cache-cache-path").on("input", onCachePathChange);
     
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
