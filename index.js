@@ -693,12 +693,20 @@ async function onLoadButtonClick() {
             parseInt(group.timestamp.substring(10, 12)), // минута
             parseInt(group.timestamp.substring(12, 14)) // секунда
         );
-        const dateStr = date.toLocaleString('ru-RU');
+        // Форматируем дату и время
+        const dateStr = date.toLocaleDateString('ru-RU', { 
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit' 
+        });
+        const timeStr = date.toLocaleTimeString('ru-RU', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+        });
         const slotsCount = group.files.length;
-        const displayName = group.userName 
-            ? `${group.userName}_${group.chatName}` 
-            : group.chatName;
-        return `${index + 1}. ${displayName}_${group.timestamp} (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`;
+        const chatName = group.chatName;
+        return `${index + 1}. ${chatName} - ${dateStr} ${timeStr} (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`;
     }).join('\n');
     
     const choice = prompt(`Выберите сохранение для загрузки:\n\n${options}\n\nВведите номер (1-${groupKeys.length}):`);
