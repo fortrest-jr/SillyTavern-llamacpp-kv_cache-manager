@@ -1088,91 +1088,51 @@
     </div>
 </div>`;
 
-    // Регистрация расширения для SillyTavern
-    // Регистрируем ДО инициализации, чтобы настройки появились в списке
-    console.log('[KV Cache Manager] Попытка регистрации расширения...');
-    console.log('[KV Cache Manager] registerExtension доступна:', typeof registerExtension !== 'undefined');
-    console.log('[KV Cache Manager] window.registerExtension доступна:', typeof window.registerExtension !== 'undefined');
-    
-    // Пробуем разные способы регистрации
-    const registerFn = registerExtension || window.registerExtension || (typeof SillyTavern !== 'undefined' && SillyTavern.registerExtension);
-    
-    if (registerFn) {
-        console.log('[KV Cache Manager] Регистрируем расширение через registerExtension');
-        try {
-            registerFn({
-                name: extensionName,
-                settingsHtml: async () => {
-                    try {
-                        // Определяем путь к текущему скрипту
-                        const currentScript = document.currentScript || 
-                            Array.from(document.getElementsByTagName('script')).pop();
-                        let basePath = '/scripts/extensions/' + extensionName + '/';
-                        
-                        if (currentScript && currentScript.src) {
-                            const scriptPath = new URL(currentScript.src).pathname;
-                            console.log('[KV Cache Manager] Путь к скрипту:', scriptPath);
-                            // Пробуем найти путь к расширению из пути скрипта
-                            const match = scriptPath.match(/\/scripts\/extensions\/([^\/]+)\//);
-                            if (match) {
-                                basePath = `/scripts/extensions/${match[1]}/`;
-                            } else {
-                                // Пробуем для third-party расширений
-                                const thirdPartyMatch = scriptPath.match(/\/scripts\/extensions\/third-party\/([^\/]+)\//);
-                                if (thirdPartyMatch) {
-                                    basePath = `/scripts/extensions/third-party/${thirdPartyMatch[1]}/`;
-                                }
-                            }
-                        }
-                        
-                        console.log('[KV Cache Manager] Базовый путь:', basePath);
-                        
-                        // Пробуем разные пути к файлу настроек
-                        const paths = [
-                            basePath + 'settings.html',
-                            `/scripts/extensions/${extensionName}/settings.html`,
-                            `/scripts/extensions/third-party/${extensionName}/settings.html`,
-                            `./settings.html`
-                        ];
-                        
-                        for (const path of paths) {
-                            try {
-                                const response = await fetch(path);
-                                if (response.ok) {
-                                    const html = await response.text();
-                                    console.log(`[KV Cache Manager] Загружен settings.html из ${path}`);
-                                    return html;
-                                }
-                            } catch (e) {
-                                console.debug(`[KV Cache Manager] Не удалось загрузить ${path}:`, e);
-                            }
-                        }
-                        
-                        // Fallback: используем встроенный HTML
-                        console.warn('[KV Cache Manager] Не удалось загрузить settings.html, используем встроенный HTML');
-                        return embeddedSettingsHtml;
-                    } catch (e) {
-                        console.error('[KV Cache Manager] Ошибка загрузки settings.html:', e);
-                        return embeddedSettingsHtml;
-                    }
-                },
-                onSettingsLoad: () => {
-                    console.log('[KV Cache Manager] Загрузка настроек в UI');
-                    loadSettingsToUI();
-                },
-                onSettingsSave: () => {
-                    console.log('[KV Cache Manager] Сохранение настроек');
-                    // Настройки уже сохранены через обработчики событий
-                }
-            });
-            console.log('[KV Cache Manager] Расширение успешно зарегистрировано');
-        } catch (e) {
-            console.error('[KV Cache Manager] Ошибка при регистрации расширения:', e);
+    // Добавление настроек расширения в UI
+    // Используем подход из примеров - вставляем HTML напрямую в контейнер настроек
+    function addSettingsToUI() {
+        // Ищем контейнер настроек расширений
+        // В SillyTavern настройки расширений обычно находятся в #extensions_settings
+        const settingsContainer = document.getElementById('extensions_settings');
+        
+        if (settingsContainer && !settingsContainer.querySelector('.kv-cache-manager-settings')) {
+            console.log('[KV Cache Manager] Добавляем настройки в UI');
+            settingsContainer.insertAdjacentHTML('beforeend', embeddedSettingsHtml);
+            loadSettingsToUI();
+            updateStatistics();
         }
-    } else {
-        console.warn('[KV Cache Manager] Функция registerExtension не найдена. Расширение может не отображаться в настройках.');
-        console.log('[KV Cache Manager] Доступные глобальные объекты:', Object.keys(window).filter(k => k.toLowerCase().includes('extension')));
     }
+    
+    // Пробуем добавить настройки сразу, если контейнер уже существует
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(addSettingsToUI, 100);
+    }
+    
+    // Слушаем изменения DOM для добавления настроек, когда контейнер появится
+    const observer = new MutationObserver(function(mutations) {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType === 1 && (node.id === 'extensions_settings' || node.querySelector('#extensions_settings'))) {
+                        setTimeout(addSettingsToUI, 100);
+                    }
+                }
+            }
+        }
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // Также слушаем клики на вкладку расширений
+    document.addEventListener('click', function(e) {
+        if (e.target && (e.target.textContent && e.target.textContent.includes('Extensions') || 
+                         e.target.closest('#extensions_settings'))) {
+            setTimeout(addSettingsToUI, 200);
+        }
+    }, true);
 
     // Инициализация при загрузке
     if (document.readyState === 'loading') {
