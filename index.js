@@ -263,19 +263,14 @@ function generateManualSaveFilename(userName, slotId) {
     return `${safeUserName}_${chatName}_${timestamp}_slot${slotId}.bin`;
 }
 
-// Проверка валидности слота (есть ли в нем данные)
-async function isSlotValid(slotId) {
-    const settings = extension_settings[extensionName] || defaultSettings;
-    if (!settings.validateCache) {
-        return true; // Если проверка отключена, считаем валидным
-    }
-    
+// Получение информации о всех слотах через /slots
+async function getAllSlotsInfo() {
     const llamaUrl = getLlamaUrl();
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
         
-        const response = await fetch(`${llamaUrl}/slots/${slotId}`, {
+        const response = await fetch(`${llamaUrl}/slots`, {
             method: 'GET',
             signal: controller.signal
         });
@@ -283,33 +278,66 @@ async function isSlotValid(slotId) {
         clearTimeout(timeoutId);
         
         if (response.ok) {
-            const slotInfo = await response.json();
-            const nCtxUsed = slotInfo.n_ctx_used || 0;
-            const nPromptTokens = slotInfo.n_prompt_tokens || 0;
-            return nCtxUsed > 0 || nPromptTokens > 0;
+            const slotsData = await response.json();
+            return slotsData;
         }
     } catch (e) {
         if (e.name !== 'AbortError') {
-            console.debug(`[KV Cache Manager] Ошибка проверки слота ${slotId}:`, e);
+            console.debug('[KV Cache Manager] Ошибка получения информации о слотах:', e);
         }
     }
     
-    return false;
+    return null;
+}
+
+// Проверка валидности слота (есть ли в нем данные)
+function isSlotValid(slotInfo) {
+    if (!slotInfo || typeof slotInfo !== 'object') {
+        return false;
+    }
+    
+    // Слот использован, если есть параметр id_task
+    return 'id_task' in slotInfo && slotInfo.id_task != null;
 }
 
 // Получение всех активных слотов с проверкой валидности
 async function getActiveSlots() {
-    if (totalSlots === 0) {
+    const settings = extension_settings[extensionName] || defaultSettings;
+    
+    // Если проверка отключена, возвращаем все слоты
+    if (!settings.validateCache) {
+        if (totalSlots === 0) {
+            return [];
+        }
+        return Array.from({ length: totalSlots }, (_, i) => i);
+    }
+    
+    // Получаем информацию о всех слотах через /slots
+    const slotsData = await getAllSlotsInfo();
+    
+    if (!slotsData) {
+        console.debug('[KV Cache Manager] Не удалось получить информацию о слотах');
         return [];
     }
     
-    // Проверяем валидность всех слотов
-    const validSlots = [];
-    for (let slotId = 0; slotId < totalSlots; slotId++) {
-        if (await isSlotValid(slotId)) {
-            validSlots.push(slotId);
-        }
+    // Обрабатываем разные форматы ответа
+    let slotsArray = [];
+    
+    if (Array.isArray(slotsData)) {
+        // Если это массив слотов
+        slotsArray = slotsData;
+    } else if (typeof slotsData === 'object') {
+        // Если это объект, преобразуем в массив
+        slotsArray = Object.values(slotsData);
     }
+    
+    // Фильтруем валидные слоты
+    const validSlots = [];
+    slotsArray.forEach((slotInfo, index) => {
+        if (isSlotValid(slotInfo)) {
+            validSlots.push(index);
+        }
+    });
     
     return validSlots;
 }
