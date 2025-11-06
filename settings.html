@@ -6,46 +6,12 @@
         </div>
         <div class="inline-drawer-content">
             <div class="kv-cache-manager-section">
-                <h3>Автоматическое сохранение</h3>
-                <div class="kv-cache-manager-field flex-container">
-                    <input type="checkbox" id="kv-cache-enabled" />
-                    <label for="kv-cache-enabled">Включить автосохранение</label>
-                </div>
-                <div class="kv-cache-manager-field flex-container">
-                    <label for="kv-cache-save-interval">Сохранять каждые N сообщений:</label>
-                    <input type="number" id="kv-cache-save-interval" min="1" value="5" />
-                </div>
-                <div class="kv-cache-manager-field">
-                    <span id="kv-cache-next-save">Следующее сохранение через: - сообщений</span>
-                </div>
-                <div class="kv-cache-manager-field flex-container">
-                    <input id="kv-cache-save-now-button" class="menu_button" type="submit" value="Сохранить сейчас" />
-                </div>
-            </div>
-
-            <hr class="sysHR" />
-
-            <div class="kv-cache-manager-section">
                 <h3>Управление кешем</h3>
-                <div class="kv-cache-manager-field flex-container">
-                    <label for="kv-cache-save-name">Имя для сохранения:</label>
-                    <input type="text" id="kv-cache-save-name" placeholder="Введите имя" />
-                </div>
                 <div class="kv-cache-manager-field flex-container">
                     <input id="kv-cache-save-button" class="menu_button" type="submit" value="Сохранить с именем" />
                 </div>
                 <div class="kv-cache-manager-field flex-container">
                     <input id="kv-cache-load-button" class="menu_button" type="submit" value="Загрузить кеш" />
-                </div>
-            </div>
-
-            <hr class="sysHR" />
-
-            <div class="kv-cache-manager-section">
-                <h3>Настройки ротации</h3>
-                <div class="kv-cache-manager-field flex-container">
-                    <label for="kv-cache-max-files">Максимум файлов на сессию (только для автосохранений):</label>
-                    <input type="number" id="kv-cache-max-files" min="1" value="10" />
                 </div>
             </div>
 
@@ -82,7 +48,30 @@
             </div>
 
             <hr class="sysHR" />
+
+            <div class="kv-cache-manager-section">
+                <h3>Автоматическое сохранение</h3>
+                <div class="kv-cache-manager-field flex-container">
+                    <input type="checkbox" id="kv-cache-enabled" />
+                    <label for="kv-cache-enabled">Включить автосохранение</label>
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <label for="kv-cache-save-interval">Сохранять каждые N сообщений:</label>
+                    <input type="number" id="kv-cache-save-interval" min="1" value="5" />
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <label for="kv-cache-max-files">Максимум файлов на сессию:</label>
+                    <input type="number" id="kv-cache-max-files" min="1" value="10" />
+                </div>
+                <div class="kv-cache-manager-field">
+                    <span id="kv-cache-next-save">Следующее сохранение через: - сообщений</span>
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <input id="kv-cache-save-now-button" class="menu_button" type="submit" value="Сохранить сейчас" />
+                </div>
+            </div>
+
+            <hr class="sysHR" />
         </div>
     </div>
 </div>
-

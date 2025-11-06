@@ -111,13 +111,15 @@ function onValidateChange(event) {
 }
 
 // Обработчики для кнопок
-function onSaveButtonClick() {
-    const userName = $("#kv-cache-save-name").val();
+async function onSaveButtonClick() {
+    const userName = prompt('Введите имя для сохранения:');
     if (userName && userName.trim()) {
         showToast('info', `Кнопка "Сохранить с именем" нажата. Имя: ${userName}`);
-    } else {
-        showToast('error', 'Введите имя для сохранения');
+    } else if (userName !== null) {
+        // Пользователь нажал OK, но не ввел имя
+        showToast('error', 'Имя не может быть пустым');
     }
+    // Если userName === null, пользователь нажал Отмена - ничего не делаем
 }
 
 function onLoadButtonClick() {

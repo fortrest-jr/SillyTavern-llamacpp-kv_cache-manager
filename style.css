@@ -20,6 +20,7 @@
 .kv-cache-manager-field input[type="number"],
 .kv-cache-manager-field input[type="text"] {
     width: 200px;
+    color: var(--SmartThemeBodyColor, inherit);
 }
 
 .kv-cache-manager-info {
