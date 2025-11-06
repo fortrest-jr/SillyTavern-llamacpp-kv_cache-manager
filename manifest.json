@@ -1,6 +1,6 @@
 {
   "display_name": "KV Cache Manager",
-  "loading_order": 10,
+  "loading_order": 11,
   "requires": [],
   "optional": [],
   "js": "index.js",
