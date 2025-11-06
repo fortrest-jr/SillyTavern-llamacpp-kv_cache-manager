@@ -702,8 +702,11 @@ async function onLoadButtonClick() {
             background: rgba(0, 0, 0, 0.5);
             z-index: 10000;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
+            overflow-y: auto;
+            padding: 20px;
+            box-sizing: border-box;
         ">
             <div style="
                 background: var(--SmartThemeBlurTintColor, #1e1e1e);
@@ -711,26 +714,34 @@ async function onLoadButtonClick() {
                 border-radius: 8px;
                 padding: 20px;
                 max-width: 600px;
-                max-height: 80vh;
-                overflow-y: auto;
                 width: 90%;
+                max-height: calc(100vh - 40px);
+                display: flex;
+                flex-direction: column;
                 box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+                margin-top: 20px;
+                margin-bottom: 20px;
             ">
                 <h3 style="
                     margin: 0 0 15px 0;
                     color: var(--SmartThemeBodyColor, #fff);
                     font-size: 1.2em;
+                    flex-shrink: 0;
                 ">Выберите сохранение для загрузки</h3>
                 <div id="kv-cache-saves-list" style="
                     display: flex;
                     flex-direction: column;
                     gap: 10px;
                     margin-bottom: 15px;
+                    overflow-y: auto;
+                    flex: 1;
+                    min-height: 0;
                 "></div>
                 <div style="
                     display: flex;
                     justify-content: flex-end;
                     gap: 10px;
+                    flex-shrink: 0;
                 ">
                     <button class="menu_button" id="kv-cache-load-cancel" style="
                         background: var(--SmartThemeBlurTintColor, #2d2d2d);
