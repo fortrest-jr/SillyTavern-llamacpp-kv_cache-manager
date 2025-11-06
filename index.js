@@ -19,7 +19,7 @@ const defaultSettings = {
     showNotifications: true,
     validateCache: true,
     apiUrl: 'http://127.0.0.1:8080',
-    cachePath: '~/kv_cache'
+    saves: [] // Список сохранений: [{ timestamp, chatName, userName, files: [{ filename, slotId }] }]
 };
 
 
@@ -40,7 +40,6 @@ async function loadSettings() {
     $("#kv-cache-show-notifications").prop("checked", settings.showNotifications).trigger("input");
     $("#kv-cache-validate").prop("checked", settings.validateCache).trigger("input");
     $("#kv-cache-api-url").val(settings.apiUrl || defaultSettings.apiUrl).trigger("input");
-    $("#kv-cache-cache-path").val(settings.cachePath || defaultSettings.cachePath).trigger("input");
     
 }
 
@@ -125,12 +124,6 @@ function onApiUrlChange(event) {
     setTimeout(() => updateSlotsList(), 500);
 }
 
-function onCachePathChange(event) {
-    const value = $(event.target).val().trim() || defaultSettings.cachePath;
-    extension_settings[extensionName].cachePath = value;
-    saveSettingsDebounced();
-    showToast('info', `Путь к папке кеша установлен: ${value}`);
-}
 
 // Получение URL llama.cpp сервера
 function getLlamaUrl() {
@@ -502,155 +495,65 @@ function parseCacheFilename(filename) {
     return { isValid: false };
 }
 
-// Получение списка сохраненных файлов кеша из папки
-// Путь используется только для поиска файлов в расширении, 
-// так как в llama.cpp путь к папке кеша фиксирован при запуске
-async function getCacheFilesList() {
+// Получение списка сохранений из настроек
+function getSavesList() {
     const settings = extension_settings[extensionName] || defaultSettings;
-    const cachePath = settings.cachePath || defaultSettings.cachePath;
-    
-    showToast('info', `Поиск файлов в: ${cachePath}`);
-    
-    try {
-        // Пробуем разные способы доступа к файловой системе
-        let fs, path, os;
-        
-        // Вариант 1: Прямой require (если доступен)
-        if (typeof require !== 'undefined') {
-            try {
-                fs = require('fs');
-                path = require('path');
-                os = require('os');
-                showToast('info', 'Доступ через require');
-            } catch (e) {
-                showToast('warning', `Ошибка require: ${e.message}`);
-            }
-        }
-        
-        // Вариант 2: window.require (Electron)
-        if (!fs && typeof window !== 'undefined') {
-            try {
-                if (window.require) {
-                    fs = window.require('fs');
-                    path = window.require('path');
-                    os = window.require('os');
-                    showToast('info', 'Доступ через window.require');
-                }
-            } catch (e) {
-                showToast('warning', `Ошибка window.require: ${e.message}`);
-            }
-        }
-        
-        // Вариант 3: global.require
-        if (!fs && typeof global !== 'undefined') {
-            try {
-                if (global.require) {
-                    fs = global.require('fs');
-                    path = global.require('path');
-                    os = global.require('os');
-                    showToast('info', 'Доступ через global.require');
-                }
-            } catch (e) {
-                showToast('warning', `Ошибка global.require: ${e.message}`);
-            }
-        }
-        
-        // Вариант 4: eval для доступа к require
-        if (!fs) {
-            try {
-                const requireFunc = eval('require');
-                fs = requireFunc('fs');
-                path = requireFunc('path');
-                os = requireFunc('os');
-                showToast('info', 'Доступ через eval(require)');
-            } catch (e) {
-                showToast('warning', `Ошибка eval(require): ${e.message}`);
-            }
-        }
-        
-        if (!fs || !path || !os) {
-            showToast('error', 'Нет доступа к Node.js модулям. Используйте ручной ввод timestamp.');
-            return [];
-        }
-        
-        // Заменяем ~ на домашнюю директорию
-        const normalizedPath = cachePath.replace(/^~/, os.homedir());
-        const fullPath = path.resolve(normalizedPath);
-        
-        showToast('info', `Проверяю путь: ${fullPath}`);
-        
-        // Проверяем, существует ли директория
-        if (!fs.existsSync(fullPath)) {
-            showToast('error', `Директория не существует: ${fullPath}`);
-            return [];
-        }
-        
-        // Проверяем, что это директория
-        const stats = fs.statSync(fullPath);
-        if (!stats.isDirectory()) {
-            showToast('error', `Путь не является директорией: ${fullPath}`);
-            return [];
-        }
-        
-        // Читаем все файлы из директории
-        const files = fs.readdirSync(fullPath);
-        showToast('info', `Найдено файлов в директории: ${files.length}`);
-        
-        // Фильтруем только .bin файлы
-        const binFiles = files.filter(file => {
-            try {
-                const filePath = path.join(fullPath, file);
-                const fileStats = fs.statSync(filePath);
-                return fileStats.isFile() && file.endsWith('.bin');
-            } catch (e) {
-                return false;
-            }
-        });
-        
-        showToast('success', `Найдено .bin файлов: ${binFiles.length}`);
-        if (binFiles.length > 0) {
-            showToast('info', `Примеры файлов: ${binFiles.slice(0, 3).join(', ')}`);
-        }
-        
-        return binFiles;
-        
-    } catch (e) {
-        showToast('error', `Ошибка получения списка файлов: ${e.message}`);
-        return [];
-    }
+    return settings.saves || [];
 }
 
-// Группировка файлов по имени чата и timestamp
-function groupFilesByChatAndTimestamp(files) {
-    const groups = {};
-    let validFiles = 0;
-    let invalidFiles = 0;
-    
-    for (const file of files) {
-        const parsed = parseCacheFilename(file);
-        if (parsed.isValid) {
-            validFiles++;
-            // Ключ: chatName_timestamp
-            const key = `${parsed.chatName}_${parsed.timestamp}`;
-            if (!groups[key]) {
-                groups[key] = {
-                    chatName: parsed.chatName,
-                    userName: parsed.userName,
-                    timestamp: parsed.timestamp,
-                    files: []
-                };
-            }
-            groups[key].files.push({
-                filename: file,
-                slotId: parsed.slotId
-            });
-        } else {
-            invalidFiles++;
-        }
+// Добавление сохранения в список
+function addSaveToList(timestamp, chatName, userName, files) {
+    const settings = extension_settings[extensionName] || defaultSettings;
+    if (!settings.saves) {
+        settings.saves = [];
     }
     
-    if (invalidFiles > 0) {
-        showToast('warning', `Найдено ${validFiles} валидных файлов, ${invalidFiles} файлов с неверным форматом имени`);
+    // Добавляем сохранение в начало списка
+    settings.saves.unshift({
+        timestamp: timestamp,
+        chatName: chatName,
+        userName: userName || null,
+        files: files.map(f => ({ filename: f.filename, slotId: f.slotId }))
+    });
+    
+    // Ограничиваем количество сохранений (храним последние N)
+    const maxSaves = 100; // Максимум сохранений в списке
+    if (settings.saves.length > maxSaves) {
+        settings.saves = settings.saves.slice(0, maxSaves);
+    }
+    
+    saveSettingsDebounced();
+}
+
+// Удаление сохранения из списка
+function removeSaveFromList(timestamp, chatName) {
+    const settings = extension_settings[extensionName] || defaultSettings;
+    if (!settings.saves) {
+        return;
+    }
+    
+    settings.saves = settings.saves.filter(save => 
+        !(save.timestamp === timestamp && save.chatName === chatName)
+    );
+    
+    saveSettingsDebounced();
+}
+
+// Группировка сохранений по имени чата и timestamp (из списка в настройках)
+function groupSavesByChatAndTimestamp(saves) {
+    const groups = {};
+    
+    for (const save of saves) {
+        const key = `${save.chatName}_${save.timestamp}`;
+        if (!groups[key]) {
+            groups[key] = {
+                chatName: save.chatName,
+                userName: save.userName,
+                timestamp: save.timestamp,
+                files: []
+            };
+        }
+        groups[key].files.push(...save.files);
     }
     
     return groups;
@@ -711,6 +614,9 @@ async function onSaveButtonClick() {
     
     let savedCount = 0;
     let errors = [];
+    const timestamp = formatTimestamp();
+    const chatName = getCurrentChatName();
+    const savedFiles = [];
     
     for (const slotId of slots) {
         try {
@@ -718,6 +624,7 @@ async function onSaveButtonClick() {
             console.log(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
+                savedFiles.push({ filename: filename, slotId: slotId });
                 console.log(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
             } else {
                 errors.push(`слот ${slotId}`);
@@ -729,6 +636,9 @@ async function onSaveButtonClick() {
     }
     
     if (savedCount > 0) {
+        // Добавляем сохранение в список
+        addSaveToList(timestamp, chatName, userName.trim(), savedFiles);
+        
         if (errors.length > 0) {
             showToast('warning', `Сохранено ${savedCount} из ${slots.length} слотов с именем "${userName}". Ошибки: ${errors.join(', ')}`);
         } else {
@@ -751,22 +661,22 @@ async function onLoadButtonClick() {
         return;
     }
     
-    // Получаем список файлов
-    const filesList = await getCacheFilesList();
+    // Получаем список сохранений из настроек
+    const savesList = getSavesList();
     
-    if (!filesList || filesList.length === 0) {
-        showToast('warning', 'Не найдено сохранений для загрузки. Проверьте путь к папке кеша в настройках.');
+    if (!savesList || savesList.length === 0) {
+        showToast('warning', 'Не найдено сохранений для загрузки. Сначала сохраните кеш.');
         return;
     }
     
-    showToast('info', `Найдено файлов для обработки: ${filesList.length}`);
+    showToast('info', `Найдено сохранений: ${savesList.length}`);
     
-    // Группируем файлы по имени чата и timestamp
-    const groups = groupFilesByChatAndTimestamp(filesList);
+    // Группируем сохранения по имени чата и timestamp
+    const groups = groupSavesByChatAndTimestamp(savesList);
     const groupKeys = Object.keys(groups).sort().reverse(); // Сортируем по убыванию (новые первыми)
     
     if (groupKeys.length === 0) {
-        showToast('warning', 'Не найдено валидных сохранений для загрузки. Проверьте формат имен файлов.');
+        showToast('warning', 'Не найдено сохранений для загрузки');
         return;
     }
     
@@ -870,6 +780,9 @@ async function onSaveNowButtonClick() {
     
     let savedCount = 0;
     let errors = [];
+    const timestamp = formatTimestamp();
+    const chatName = getCurrentChatName();
+    const savedFiles = [];
     
     for (const slotId of slots) {
         try {
@@ -877,6 +790,7 @@ async function onSaveNowButtonClick() {
             console.log(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
+                savedFiles.push({ filename: filename, slotId: slotId });
                 console.log(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
             } else {
                 errors.push(`слот ${slotId}`);
@@ -888,6 +802,9 @@ async function onSaveNowButtonClick() {
     }
     
     if (savedCount > 0) {
+        // Добавляем сохранение в список (без имени пользователя для автосохранений)
+        addSaveToList(timestamp, chatName, null, savedFiles);
+        
         if (errors.length > 0) {
             showToast('warning', `Сохранено ${savedCount} из ${slots.length} слотов. Ошибки: ${errors.join(', ')}`);
         } else {
@@ -916,7 +833,6 @@ jQuery(async () => {
     $("#kv-cache-show-notifications").on("input", onShowNotificationsChange);
     $("#kv-cache-validate").on("input", onValidateChange);
     $("#kv-cache-api-url").on("input", onApiUrlChange);
-    $("#kv-cache-cache-path").on("input", onCachePathChange);
     
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
