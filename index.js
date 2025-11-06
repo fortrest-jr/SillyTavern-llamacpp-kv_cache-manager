@@ -502,7 +502,7 @@ function parseCacheFilename(filename) {
     return { isValid: false };
 }
 
-// Получение списка сохраненных файлов кеша из папки через Node.js fs API
+// Получение списка сохраненных файлов кеша из папки
 // Путь используется только для поиска файлов в расширении, 
 // так как в llama.cpp путь к папке кеша фиксирован при запуске
 async function getCacheFilesList() {
@@ -512,22 +512,64 @@ async function getCacheFilesList() {
     showToast('info', `Поиск файлов в: ${cachePath}`);
     
     try {
-        // Используем Node.js API для чтения файловой системы
+        // Пробуем разные способы доступа к файловой системе
         let fs, path, os;
         
-        // Пробуем разные способы доступа к Node.js модулям
+        // Вариант 1: Прямой require (если доступен)
         if (typeof require !== 'undefined') {
-            fs = require('fs');
-            path = require('path');
-            os = require('os');
-            showToast('info', 'Доступ к Node.js модулям получен через require');
-        } else if (typeof window !== 'undefined' && window.require) {
-            fs = window.require('fs');
-            path = window.require('path');
-            os = window.require('os');
-            showToast('info', 'Доступ к Node.js модулям получен через window.require');
-        } else {
-            showToast('error', 'Нет доступа к Node.js модулям (fs, path, os)');
+            try {
+                fs = require('fs');
+                path = require('path');
+                os = require('os');
+                showToast('info', 'Доступ через require');
+            } catch (e) {
+                showToast('warning', `Ошибка require: ${e.message}`);
+            }
+        }
+        
+        // Вариант 2: window.require (Electron)
+        if (!fs && typeof window !== 'undefined') {
+            try {
+                if (window.require) {
+                    fs = window.require('fs');
+                    path = window.require('path');
+                    os = window.require('os');
+                    showToast('info', 'Доступ через window.require');
+                }
+            } catch (e) {
+                showToast('warning', `Ошибка window.require: ${e.message}`);
+            }
+        }
+        
+        // Вариант 3: global.require
+        if (!fs && typeof global !== 'undefined') {
+            try {
+                if (global.require) {
+                    fs = global.require('fs');
+                    path = global.require('path');
+                    os = global.require('os');
+                    showToast('info', 'Доступ через global.require');
+                }
+            } catch (e) {
+                showToast('warning', `Ошибка global.require: ${e.message}`);
+            }
+        }
+        
+        // Вариант 4: eval для доступа к require
+        if (!fs) {
+            try {
+                const requireFunc = eval('require');
+                fs = requireFunc('fs');
+                path = requireFunc('path');
+                os = requireFunc('os');
+                showToast('info', 'Доступ через eval(require)');
+            } catch (e) {
+                showToast('warning', `Ошибка eval(require): ${e.message}`);
+            }
+        }
+        
+        if (!fs || !path || !os) {
+            showToast('error', 'Нет доступа к Node.js модулям. Используйте ручной ввод timestamp.');
             return [];
         }
         
