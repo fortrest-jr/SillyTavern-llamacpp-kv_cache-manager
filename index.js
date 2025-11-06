@@ -7,7 +7,7 @@ import { extension_settings, getContext, loadExtensionSettings } from "../../../
 import { saveSettingsDebounced } from "../../../../script.js";
 
 // Имя расширения должно совпадать с именем папки
-const extensionName = "kv-cache-manager";
+const extensionName = "SillyTavern-llamacpp-kv_cache-manager";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const extensionSettings = extension_settings[extensionName];
 
