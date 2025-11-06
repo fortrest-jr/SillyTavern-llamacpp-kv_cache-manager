@@ -1,9 +1,13 @@
 {
   "display_name": "KV Cache Manager",
-  "version": "1.0.0",
-  "author": "llm-tools",
+  "loading_order": 10,
+  "requires": [],
+  "optional": [],
   "js": "index.js",
   "css": "style.css",
-  "loading_order": 10
+  "version": "1.0.1",
+  "author": "fortrest-jr",
+  "auto_update": true,
+  "homePage": "https://github.com/fortrest-jr/SillyTavern-llamacpp-kv_cache-manager"
 }
 
