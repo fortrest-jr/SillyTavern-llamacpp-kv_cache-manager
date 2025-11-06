@@ -278,24 +278,34 @@ async function updateSlotsList() {
     }
     
     try {
-        const slots = await getActiveSlots();
-        
-        if (slots.length === 0) {
-            slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Нет активных слотов для сохранения</p>');
+        // Проверяем наличие slot-manager
+        if (!slotManagerSettings || !slotManagerSettings.slots) {
+            slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Расширение <strong>llamacpp-slot-manager</strong> не найдено или не инициализировано</p>');
             return;
         }
         
+        // Получаем слоты из slot-manager без проверки валидности (быстрее)
+        const slotsWithCharacters = getActiveSlotsWithCharacters();
+        
+        if (slotsWithCharacters.length === 0) {
+            slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Нет активных слотов в slot-manager</p>');
+            return;
+        }
+        
+        // Показываем список слотов (без проверки валидности для скорости)
         let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
-        for (const { slotId, characterName } of slots) {
+        for (const { slotId, characterName } of slotsWithCharacters) {
             html += `<li style="margin: 3px 0;">Слот ${slotId}: <strong>${characterName}</strong></li>`;
         }
         html += '</ul>';
-        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Всего: ${slots.length} слот(ов)</p>`;
+        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Всего: ${slotsWithCharacters.length} слот(ов)</p>`;
+        html += `<p style="margin-top: 3px; font-size: 0.85em; color: var(--SmartThemeBodyColor, inherit); opacity: 0.7;">При сохранении будут проверены только слоты с валидным кешем</p>`;
         
         slotsListElement.html(html);
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка при обновлении списка слотов:', e);
-        slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Ошибка загрузки слотов</p>');
+        const errorMessage = e.message || 'Неизвестная ошибка';
+        slotsListElement.html(`<p style="color: var(--SmartThemeBodyColor, inherit);">Ошибка загрузки слотов: ${errorMessage}</p>`);
     }
 }
 
