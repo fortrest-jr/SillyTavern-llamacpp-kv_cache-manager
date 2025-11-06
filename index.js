@@ -509,7 +509,7 @@ async function getCacheFilesList() {
     const settings = extension_settings[extensionName] || defaultSettings;
     const cachePath = settings.cachePath || defaultSettings.cachePath;
     
-    console.log(`[KV Cache Manager] Получение списка файлов из: ${cachePath}`);
+    showToast('info', `Поиск файлов в: ${cachePath}`);
     
     try {
         // Используем Node.js API для чтения файловой системы
@@ -520,12 +520,14 @@ async function getCacheFilesList() {
             fs = require('fs');
             path = require('path');
             os = require('os');
+            showToast('info', 'Доступ к Node.js модулям получен через require');
         } else if (typeof window !== 'undefined' && window.require) {
             fs = window.require('fs');
             path = window.require('path');
             os = window.require('os');
+            showToast('info', 'Доступ к Node.js модулям получен через window.require');
         } else {
-            console.warn('[KV Cache Manager] Нет доступа к Node.js модулям');
+            showToast('error', 'Нет доступа к Node.js модулям (fs, path, os)');
             return [];
         }
         
@@ -533,36 +535,45 @@ async function getCacheFilesList() {
         const normalizedPath = cachePath.replace(/^~/, os.homedir());
         const fullPath = path.resolve(normalizedPath);
         
-        console.log(`[KV Cache Manager] Читаю директорию: ${fullPath}`);
+        showToast('info', `Проверяю путь: ${fullPath}`);
         
         // Проверяем, существует ли директория
         if (!fs.existsSync(fullPath)) {
-            console.warn(`[KV Cache Manager] Директория не существует: ${fullPath}`);
+            showToast('error', `Директория не существует: ${fullPath}`);
             return [];
         }
         
         // Проверяем, что это директория
         const stats = fs.statSync(fullPath);
         if (!stats.isDirectory()) {
-            console.warn(`[KV Cache Manager] Путь не является директорией: ${fullPath}`);
+            showToast('error', `Путь не является директорией: ${fullPath}`);
             return [];
         }
         
         // Читаем все файлы из директории
         const files = fs.readdirSync(fullPath);
+        showToast('info', `Найдено файлов в директории: ${files.length}`);
         
         // Фильтруем только .bin файлы
         const binFiles = files.filter(file => {
-            const filePath = path.join(fullPath, file);
-            const fileStats = fs.statSync(filePath);
-            return fileStats.isFile() && file.endsWith('.bin');
+            try {
+                const filePath = path.join(fullPath, file);
+                const fileStats = fs.statSync(filePath);
+                return fileStats.isFile() && file.endsWith('.bin');
+            } catch (e) {
+                return false;
+            }
         });
         
-        console.log(`[KV Cache Manager] Найдено ${binFiles.length} .bin файлов:`, binFiles);
+        showToast('success', `Найдено .bin файлов: ${binFiles.length}`);
+        if (binFiles.length > 0) {
+            showToast('info', `Примеры файлов: ${binFiles.slice(0, 3).join(', ')}`);
+        }
+        
         return binFiles;
         
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка получения списка файлов:', e);
+        showToast('error', `Ошибка получения списка файлов: ${e.message}`);
         return [];
     }
 }
@@ -570,10 +581,13 @@ async function getCacheFilesList() {
 // Группировка файлов по имени чата и timestamp
 function groupFilesByChatAndTimestamp(files) {
     const groups = {};
+    let validFiles = 0;
+    let invalidFiles = 0;
     
     for (const file of files) {
         const parsed = parseCacheFilename(file);
         if (parsed.isValid) {
+            validFiles++;
             // Ключ: chatName_timestamp
             const key = `${parsed.chatName}_${parsed.timestamp}`;
             if (!groups[key]) {
@@ -588,7 +602,13 @@ function groupFilesByChatAndTimestamp(files) {
                 filename: file,
                 slotId: parsed.slotId
             });
+        } else {
+            invalidFiles++;
         }
+    }
+    
+    if (invalidFiles > 0) {
+        showToast('warning', `Найдено ${validFiles} валидных файлов, ${invalidFiles} файлов с неверным форматом имени`);
     }
     
     return groups;
@@ -693,18 +713,22 @@ async function onLoadButtonClick() {
     const filesList = await getCacheFilesList();
     
     if (!filesList || filesList.length === 0) {
-        showToast('warning', 'Не найдено сохранений для загрузки');
+        showToast('warning', 'Не найдено сохранений для загрузки. Проверьте путь к папке кеша в настройках.');
         return;
     }
+    
+    showToast('info', `Найдено файлов для обработки: ${filesList.length}`);
     
     // Группируем файлы по имени чата и timestamp
     const groups = groupFilesByChatAndTimestamp(filesList);
     const groupKeys = Object.keys(groups).sort().reverse(); // Сортируем по убыванию (новые первыми)
     
     if (groupKeys.length === 0) {
-        showToast('warning', 'Не найдено сохранений для загрузки');
+        showToast('warning', 'Не найдено валидных сохранений для загрузки. Проверьте формат имен файлов.');
         return;
     }
+    
+    showToast('info', `Найдено групп сохранений: ${groupKeys.length}`);
     
     // Формируем список для выбора
     const options = groupKeys.map((key, index) => {
@@ -861,8 +885,9 @@ jQuery(async () => {
     
     // Инициализация больше не нужна - количество слотов определяется из ответа API
     
-    // Обновляем список слотов при старте
-    updateSlotsList();
+    // Показываем placeholder для списка слотов (обновится при сохранении/загрузке)
+    updateSlotsListPlaceholder();
+    
     // Обновляем список слотов только при сохранении/загрузке
     $("#kv-cache-save-button, #kv-cache-save-now-button, #kv-cache-load-button").on("click", () => {
         setTimeout(() => updateSlotsList(), 1000);
