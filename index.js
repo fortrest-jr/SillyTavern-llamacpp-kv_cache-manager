@@ -21,11 +21,8 @@ const defaultSettings = {
     apiUrl: 'http://127.0.0.1:8080'
 };
 
-// Управление слотами (встроенная логика вместо зависимости от slot-manager)
-const slotManagement = {
-    slots: [],      // Массив: индекс = номер слота, значение = имя персонажа
-    slotsUsage: []  // Массив: индекс = номер слота, значение = Date последнего использования
-};
+// Управление слотами - упрощенная версия, просто отслеживаем количество слотов
+let totalSlots = 0;
 
 // Загрузка настроек
 async function loadSettings() {
@@ -45,10 +42,9 @@ async function loadSettings() {
     $("#kv-cache-validate").prop("checked", settings.validateCache).trigger("input");
     $("#kv-cache-api-url").val(settings.apiUrl || defaultSettings.apiUrl).trigger("input");
     
-    // Загружаем управление слотами из настроек
-    if (settings.slotManagement) {
-        slotManagement.slots = settings.slotManagement.slots || [];
-        slotManagement.slotsUsage = (settings.slotManagement.slotsUsage || []).map(d => d ? new Date(d) : null);
+    // Загружаем количество слотов из настроек (если есть)
+    if (settings.totalSlots) {
+        totalSlots = settings.totalSlots;
     }
 }
 
@@ -162,84 +158,11 @@ function getCurrentCharacterName() {
 }
 
 // Инициализация слотов
-function initializeSlots(totalSlots) {
-    if (!slotManagement.slots || slotManagement.slots.length !== totalSlots) {
-        slotManagement.slots = new Array(totalSlots);
-        slotManagement.slotsUsage = new Array(totalSlots);
-    }
-    console.debug(`[KV Cache Manager] Инициализировано ${totalSlots} слотов`);
-}
-
-// Получение номера слота по имени персонажа
-function getSlotByCharacterName(characterName) {
-    if (!characterName || !slotManagement.slots) {
-        return null;
-    }
-    const slotIndex = slotManagement.slots.findIndex(key => key === characterName);
-    return slotIndex !== -1 ? slotIndex : null;
-}
-
-// Получение слота для персонажа (создает новый или возвращает существующий)
-function acquireSlot(characterName) {
-    if (!characterName) {
-        return null;
-    }
-    
-    // Проверяем, есть ли уже слот для этого персонажа
-    const existingIndex = slotManagement.slots.findIndex(key => key === characterName);
-    if (existingIndex !== -1) {
-        slotManagement.slotsUsage[existingIndex] = new Date();
-        saveSlotManagement();
-        return existingIndex;
-    }
-    
-    // Ищем свободный слот
-    const firstAvailableIndex = slotManagement.slots.findIndex(key => key === undefined || key === null);
-    if (firstAvailableIndex !== -1) {
-        slotManagement.slots[firstAvailableIndex] = characterName;
-        slotManagement.slotsUsage[firstAvailableIndex] = new Date();
-        saveSlotManagement();
-        return firstAvailableIndex;
-    }
-    
-    // Если нет свободных слотов, используем наименее используемый
-    let leastRecentDate = Infinity;
-    let leastRecentIndex = -1;
-    
-    slotManagement.slotsUsage.forEach((date, index) => {
-        if (date && date < leastRecentDate) {
-            leastRecentDate = date;
-            leastRecentIndex = index;
-        }
-    });
-    
-    if (leastRecentIndex !== -1) {
-        slotManagement.slots[leastRecentIndex] = characterName;
-        slotManagement.slotsUsage[leastRecentIndex] = new Date();
-        saveSlotManagement();
-        return leastRecentIndex;
-    }
-    
-    return null;
-}
-
-// Получение всех активных слотов с именами персонажей
-function getActiveSlotsWithCharacters() {
-    const result = [];
-    if (!slotManagement.slots) {
-        return result;
-    }
-    
-    slotManagement.slots.forEach((characterName, slotIndex) => {
-        if (typeof characterName === 'string' && characterName) {
-            result.push({
-                slotId: slotIndex,
-                characterName: characterName
-            });
-        }
-    });
-    
-    return result;
+function initializeSlots(count) {
+    totalSlots = count;
+    extension_settings[extensionName].totalSlots = count;
+    saveSettingsDebounced();
+    console.debug(`[KV Cache Manager] Инициализировано ${count} слотов`);
 }
 
 // Определение количества слотов через API
@@ -304,14 +227,6 @@ async function detectSlotsCount() {
     return 2;
 }
 
-// Сохранение управления слотами в настройках
-function saveSlotManagement() {
-    extension_settings[extensionName].slotManagement = {
-        slots: slotManagement.slots || [],
-        slotsUsage: (slotManagement.slotsUsage || []).map(d => d ? d.toISOString() : null)
-    };
-    saveSettingsDebounced();
-}
 
 // Получение ID текущего чата
 function getCurrentChatId() {
@@ -334,20 +249,18 @@ function formatTimestamp(date = new Date()) {
 }
 
 // Генерация имени файла для автосохранения
-function generateAutoSaveFilename(characterName) {
+function generateAutoSaveFilename(slotId) {
     const chatName = getCurrentChatName().replace(/[^a-zA-Z0-9_-]/g, '_');
-    const safeCharacterName = characterName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const timestamp = formatTimestamp();
-    return `${chatName}_${safeCharacterName}_${timestamp}.bin`;
+    return `${chatName}_${timestamp}_slot${slotId}.bin`;
 }
 
 // Генерация имени файла для ручного сохранения
-function generateManualSaveFilename(userName, characterName) {
+function generateManualSaveFilename(userName, slotId) {
     const chatName = getCurrentChatName().replace(/[^a-zA-Z0-9_-]/g, '_');
     const safeUserName = userName.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const safeCharacterName = characterName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const timestamp = formatTimestamp();
-    return `${safeUserName}_${chatName}_${safeCharacterName}_${timestamp}.bin`;
+    return `${safeUserName}_${chatName}_${timestamp}_slot${slotId}.bin`;
 }
 
 // Проверка валидности слота (есть ли в нем данные)
@@ -386,19 +299,15 @@ async function isSlotValid(slotId) {
 
 // Получение всех активных слотов с проверкой валидности
 async function getActiveSlots() {
-    // Получаем слоты из нашего управления
-    const slotsWithCharacters = getActiveSlotsWithCharacters();
-    
-    if (slotsWithCharacters.length === 0) {
-        console.debug('[KV Cache Manager] Нет активных слотов');
+    if (totalSlots === 0) {
         return [];
     }
     
-    // Проверяем валидность каждого слота
+    // Проверяем валидность всех слотов
     const validSlots = [];
-    for (const { slotId, characterName } of slotsWithCharacters) {
+    for (let slotId = 0; slotId < totalSlots; slotId++) {
         if (await isSlotValid(slotId)) {
-            validSlots.push({ slotId, characterName });
+            validSlots.push(slotId);
         }
     }
     
@@ -414,27 +323,27 @@ async function updateSlotsList() {
     
     try {
         // Инициализируем слоты, если нужно
-        if (!slotManagement.slots || slotManagement.slots.length === 0) {
+        if (totalSlots === 0) {
             const slotsCount = await detectSlotsCount();
             initializeSlots(slotsCount);
         }
         
-        // Получаем слоты без проверки валидности (быстрее)
-        const slotsWithCharacters = getActiveSlotsWithCharacters();
+        // Получаем валидные слоты
+        const validSlots = await getActiveSlots();
         
-        if (slotsWithCharacters.length === 0) {
-            slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Нет активных слотов. Слоты будут распределены автоматически при сохранении.</p>');
+        if (validSlots.length === 0) {
+            slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Нет активных слотов с валидным кешем</p>');
             return;
         }
         
         // Показываем список слотов
         let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
-        for (const { slotId, characterName } of slotsWithCharacters) {
-            html += `<li style="margin: 3px 0;">Слот ${slotId}: <strong>${characterName}</strong></li>`;
+        for (const slotId of validSlots) {
+            html += `<li style="margin: 3px 0;">Слот <strong>${slotId}</strong></li>`;
         }
         html += '</ul>';
-        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Всего: ${slotsWithCharacters.length} слот(ов)</p>`;
-        html += `<p style="margin-top: 3px; font-size: 0.85em; color: var(--SmartThemeBodyColor, inherit); opacity: 0.7;">При сохранении будут проверены только слоты с валидным кешем</p>`;
+        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Всего: ${validSlots.length} слот(ов) из ${totalSlots}</p>`;
+        html += `<p style="margin-top: 3px; font-size: 0.85em; color: var(--SmartThemeBodyColor, inherit); opacity: 0.7;">Будут сохранены все валидные слоты</p>`;
         
         slotsListElement.html(html);
     } catch (e) {
@@ -565,78 +474,36 @@ async function onSaveButtonClick() {
     }
     
     // Инициализируем слоты, если нужно
-    if (!slotManagement.slots || slotManagement.slots.length === 0) {
+    if (totalSlots === 0) {
         const slotsCount = await detectSlotsCount();
         initializeSlots(slotsCount);
     }
     
-    // Получаем имена персонажей из текущего чата
-    const context = getContext();
-    const characterNames = [];
+    // Получаем все валидные слоты
+    const slots = await getActiveSlots();
     
-    // Для обычного чата - один персонаж
-    if (context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
-        characterNames.push(context.characters[context.characterId].name);
-    }
-    
-    // Для группового чата - все персонажи из группы
-    if (context.groupId && context.groups) {
-        const group = context.groups.find(g => g.id === context.groupId);
-        if (group && group.characters) {
-            group.characters.forEach(charId => {
-                const char = context.characters.find(c => c.id === charId);
-                if (char && !characterNames.includes(char.name)) {
-                    characterNames.push(char.name);
-                }
-            });
-        }
-    }
-    
-    // Проверяем все слоты на валидность и используем уже распределенные слоты
-    const validSlots = [];
-    for (let slotId = 0; slotId < slotManagement.slots.length; slotId++) {
-        if (await isSlotValid(slotId)) {
-            // Используем имя персонажа из распределения слотов
-            let characterName = slotManagement.slots[slotId];
-            
-            // Если слот не распределен, используем первого персонажа из чата как fallback
-            if (!characterName && characterNames.length > 0) {
-                characterName = characterNames[0];
-            }
-            
-            // Если все еще нет имени, используем общее
-            if (!characterName) {
-                characterName = getCurrentCharacterName() || 'character';
-            }
-            
-            validSlots.push({ slotId, characterName });
-        }
-    }
-    
-    if (validSlots.length === 0) {
+    if (slots.length === 0) {
         showToast('warning', 'Нет активных слотов с валидным кешем для сохранения');
         return;
     }
-    
-    const slots = validSlots;
     
     showToast('info', `Найдено ${slots.length} активных слотов`);
     
     let savedCount = 0;
     let errors = [];
     
-    for (const { slotId, characterName } of slots) {
+    for (const slotId of slots) {
         try {
-            const filename = generateManualSaveFilename(userName.trim(), characterName);
+            const filename = generateManualSaveFilename(userName.trim(), slotId);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
-                console.log(`[KV Cache Manager] Сохранен кеш для слота ${slotId} (${characterName}): ${filename}`);
+                console.log(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
             } else {
-                errors.push(`${characterName} (слот ${slotId})`);
+                errors.push(`слот ${slotId}`);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotId} (${characterName}):`, e);
-            errors.push(`${characterName} (слот ${slotId}): ${e.message}`);
+            console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotId}:`, e);
+            errors.push(`слот ${slotId}: ${e.message}`);
         }
     }
     
@@ -729,18 +596,18 @@ async function onSaveNowButtonClick() {
     let savedCount = 0;
     let errors = [];
     
-    for (const { slotId, characterName } of slots) {
+    for (const slotId of slots) {
         try {
-            const filename = generateAutoSaveFilename(characterName);
+            const filename = generateAutoSaveFilename(slotId);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
-                console.log(`[KV Cache Manager] Сохранен кеш для слота ${slotId} (${characterName}): ${filename}`);
+                console.log(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
             } else {
-                errors.push(`${characterName} (слот ${slotId})`);
+                errors.push(`слот ${slotId}`);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotId} (${characterName}):`, e);
-            errors.push(`${characterName} (слот ${slotId}): ${e.message}`);
+            console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotId}:`, e);
+            errors.push(`слот ${slotId}: ${e.message}`);
         }
     }
     
@@ -756,9 +623,6 @@ async function onSaveNowButtonClick() {
         showToast('error', `Не удалось сохранить кеш. Ошибки: ${errors.join(', ')}`);
     }
 }
-
-// Обработчик события генерации - распределяем слоты при начале генерации
-let currentSlot = null;
 
 // Функция вызывается при загрузке расширения
 jQuery(async () => {
@@ -786,24 +650,9 @@ jQuery(async () => {
     
     // Инициализируем слоты при старте приложения
     eventSource.on(event_types.APP_READY, async () => {
-        if (!slotManagement.slots || slotManagement.slots.length === 0) {
+        if (totalSlots === 0) {
             const slotsCount = await detectSlotsCount();
             initializeSlots(slotsCount);
-        }
-    });
-    
-    // Распределяем слоты при начале генерации (как в slot-manager)
-    eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, (data) => {
-        if (data && data.char) {
-            // Инициализируем слоты, если нужно
-            if (!slotManagement.slots || slotManagement.slots.length === 0) {
-                // Используем дефолтное значение, если не удалось определить
-                initializeSlots(2);
-            }
-            
-            // Распределяем слот для персонажа
-            currentSlot = acquireSlot(data.char);
-            console.debug(`[KV Cache Manager] Распределен слот ${currentSlot} для персонажа ${data.char}`);
         }
     });
     
