@@ -36,16 +36,6 @@
 
     // Инициализация UI
     function initUI() {
-        // Загружаем settings.html при открытии настроек
-        if (typeof extension_prompt !== 'undefined') {
-            // Хук для загрузки settings.html
-            extension_prompt.registerExtension(extensionName, {
-                onSettingsLoad: function() {
-                    loadSettingsToUI();
-                }
-            });
-        }
-
         // Инициализация обработчиков событий UI
         setupUIHandlers();
     }
@@ -1012,13 +1002,147 @@
         getCurrentChatId: getCurrentChatId
     };
 
-    // Хук для SillyTavern расширений
+    // Встроенный HTML для настроек (fallback)
+    const embeddedSettingsHtml = `<div class="kv-cache-manager-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>KV Cache Manager</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="kv-cache-manager-section">
+                <h3>Автоматическое сохранение</h3>
+                <div class="kv-cache-manager-field flex-container">
+                    <input type="checkbox" id="kv-cache-enabled" />
+                    <label for="kv-cache-enabled">Включить автосохранение</label>
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <label for="kv-cache-save-interval">Сохранять каждые N сообщений:</label>
+                    <input type="number" id="kv-cache-save-interval" min="1" value="5" />
+                </div>
+                <div class="kv-cache-manager-field">
+                    <span id="kv-cache-next-save">Следующее сохранение через: - сообщений</span>
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="kv-cache-manager-section">
+                <h3>Управление кешем</h3>
+                <div class="kv-cache-manager-field flex-container">
+                    <label for="kv-cache-save-name">Имя для сохранения:</label>
+                    <input type="text" id="kv-cache-save-name" placeholder="Введите имя" />
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <input id="kv-cache-save-button" class="menu_button" type="submit" value="Сохранить с именем" />
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <input id="kv-cache-load-button" class="menu_button" type="submit" value="Загрузить кеш" />
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="kv-cache-manager-section">
+                <h3>Настройки ротации</h3>
+                <div class="kv-cache-manager-field flex-container">
+                    <label for="kv-cache-max-files">Максимум файлов на сессию (только для автосохранений):</label>
+                    <input type="number" id="kv-cache-max-files" min="1" value="10" />
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="kv-cache-manager-section">
+                <h3>Статистика и последнее сохранение</h3>
+                <div id="kv-cache-last-save" class="kv-cache-manager-info">
+                    <p><strong>Последнее сохранение:</strong></p>
+                    <p id="kv-cache-last-save-info">Нет данных</p>
+                </div>
+                <div id="kv-cache-statistics" class="kv-cache-manager-info">
+                    <p><strong>Статистика:</strong></p>
+                    <p id="kv-cache-stats-info">Нет данных</p>
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="kv-cache-manager-section">
+                <h3>Дополнительные настройки</h3>
+                <div class="kv-cache-manager-field flex-container">
+                    <input type="checkbox" id="kv-cache-auto-load" />
+                    <label for="kv-cache-auto-load">Автозагрузка при переключении на чат</label>
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <input type="checkbox" id="kv-cache-show-notifications" />
+                    <label for="kv-cache-show-notifications">Показывать уведомления</label>
+                </div>
+                <div class="kv-cache-manager-field flex-container">
+                    <input type="checkbox" id="kv-cache-validate" />
+                    <label for="kv-cache-validate">Проверять валидность кеша</label>
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+        </div>
+    </div>
+</div>`;
+
+    // Регистрация расширения для SillyTavern
+    // Используем стандартный способ регистрации настроек
     if (typeof registerExtension !== 'undefined') {
         registerExtension({
             name: extensionName,
             settingsHtml: async () => {
-                const response = await fetch(`/scripts/extensions/${extensionName}/settings.html`);
-                return await response.text();
+                try {
+                    // Определяем путь к текущему скрипту
+                    const currentScript = document.currentScript || 
+                        Array.from(document.getElementsByTagName('script')).pop();
+                    let basePath = '/scripts/extensions/' + extensionName + '/';
+                    
+                    if (currentScript && currentScript.src) {
+                        const scriptPath = new URL(currentScript.src).pathname;
+                        // Пробуем найти путь к расширению из пути скрипта
+                        const match = scriptPath.match(/\/scripts\/extensions\/([^\/]+)\//);
+                        if (match) {
+                            basePath = `/scripts/extensions/${match[1]}/`;
+                        } else {
+                            // Пробуем для third-party расширений
+                            const thirdPartyMatch = scriptPath.match(/\/scripts\/extensions\/third-party\/([^\/]+)\//);
+                            if (thirdPartyMatch) {
+                                basePath = `/scripts/extensions/third-party/${thirdPartyMatch[1]}/`;
+                            }
+                        }
+                    }
+                    
+                    // Пробуем разные пути к файлу настроек
+                    const paths = [
+                        basePath + 'settings.html',
+                        `/scripts/extensions/${extensionName}/settings.html`,
+                        `/scripts/extensions/third-party/${extensionName}/settings.html`,
+                        `./settings.html`
+                    ];
+                    
+                    for (const path of paths) {
+                        try {
+                            const response = await fetch(path);
+                            if (response.ok) {
+                                const html = await response.text();
+                                console.log(`[KV Cache Manager] Загружен settings.html из ${path}`);
+                                return html;
+                            }
+                        } catch (e) {
+                            console.debug(`[KV Cache Manager] Не удалось загрузить ${path}:`, e);
+                        }
+                    }
+                    
+                    // Fallback: используем встроенный HTML
+                    console.warn('[KV Cache Manager] Не удалось загрузить settings.html, используем встроенный HTML');
+                    return embeddedSettingsHtml;
+                } catch (e) {
+                    console.error('[KV Cache Manager] Ошибка загрузки settings.html:', e);
+                    return embeddedSettingsHtml;
+                }
             },
             onSettingsLoad: () => {
                 loadSettingsToUI();
@@ -1027,6 +1151,8 @@
                 // Настройки уже сохранены через обработчики событий
             }
         });
+    } else {
+        console.warn('[KV Cache Manager] Функция registerExtension не найдена. Расширение может не отображаться в настройках.');
     }
 
     // Инициализация при загрузке
