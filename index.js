@@ -766,8 +766,9 @@ async function openLoadModal() {
         return;
     }
     
-    // Получаем текущий chatId
-    loadModalData.currentChatId = getCurrentChatId() || 'unknown';
+    // Получаем текущий chatId и нормализуем его (как в generateSaveFilename)
+    const rawChatId = getCurrentChatId() || 'unknown';
+    loadModalData.currentChatId = String(rawChatId).replace(/[^a-zA-Z0-9_-]/g, '_');
     
     // Отображаем чаты и файлы
     renderLoadModalChats();
@@ -794,7 +795,9 @@ function renderLoadModalChats() {
     // Обновляем ID и счетчик для текущего чата
     const currentChatGroups = chats[currentChatId] || [];
     const currentCount = currentChatGroups.reduce((sum, g) => sum + g.files.length, 0);
-    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text((currentChatId || 'unknown') + ' [текущий]');
+    // Отображаем исходное имя чата (до нормализации) для читаемости
+    const rawChatId = getCurrentChatId() || 'unknown';
+    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
     $(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
     // Фильтруем чаты по поисковому запросу
