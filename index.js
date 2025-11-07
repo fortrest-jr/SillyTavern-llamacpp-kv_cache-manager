@@ -636,16 +636,46 @@ async function onSaveNowButtonClick() {
     await saveCache(false); // Не запрашиваем имя пользователя
 }
 
-// Удаление файла через API плагина
+let csrfTokenCache = null;
+
+async function getCsrfToken() {
+    if (csrfTokenCache) {
+        return csrfTokenCache;
+    }
+    
+    try {
+        const response = await fetch('/csrf-token');
+        if (response.ok) {
+            const data = await response.json();
+            if (data && data.token) {
+                csrfTokenCache = data.token;
+                return csrfTokenCache;
+            }
+        }
+    } catch (e) {
+        console.warn('[KV Cache Manager] Не удалось получить CSRF токен:', e);
+    }
+    
+    return null;
+}
+
 async function deleteFile(filename) {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
         
-        // Используем правильный формат: DELETE /files/:filename
-        const encodedFilename = encodeURIComponent(filename);
-        const response = await fetch(`/api/plugins/kv-cache-manager/files/${encodedFilename}`, {
+        const url = `/api/plugins/kv-cache-manager/files/${filename}`;
+        const csrfToken = await getCsrfToken();
+        
+        const headers = {};
+        if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+        }
+        
+        const response = await fetch(url, {
             method: 'DELETE',
+            headers: headers,
+            credentials: 'same-origin',
             signal: controller.signal
         });
         
