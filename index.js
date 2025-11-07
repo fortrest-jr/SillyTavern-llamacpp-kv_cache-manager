@@ -1306,8 +1306,6 @@ jQuery(async () => {
     // Подписка на событие переключения чата для автозагрузки
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         const currentChatId = getNormalizedChatId();
-        // Проверяем, что чат действительно изменился
-        // Небольшая задержка, чтобы чат успел полностью загрузиться
         setTimeout(async () => {
             await tryAutoLoadOnChatSwitch(currentChatId);
         }, 500);
