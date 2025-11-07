@@ -1189,6 +1189,12 @@ async function tryAutoLoadOnChatSwitch(chatId) {
         return;
     }
     
+    // Не предлагаем автозагрузку для чата "unknown"
+    if (chatId === 'unknown' || !chatId) {
+        console.debug(`[KV Cache Manager] Пропускаем автозагрузку для чата "unknown"`);
+        return;
+    }
+    
     // Проверяем, не загружали ли мы уже этот чат в текущей сессии
     if (lastLoadedChatId === chatId) {
         console.debug(`[KV Cache Manager] Чат ${chatId} уже загружался в этой сессии, пропускаем автозагрузку`);
