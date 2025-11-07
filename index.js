@@ -432,35 +432,6 @@ async function getFilesList() {
     }
 }
 
-// Группировка файлов по chatId и timestamp (из имён файлов)
-function groupFilesByChatAndTimestamp(filenames) {
-    const groups = {};
-    
-    for (const filename of filenames) {
-        const parsed = parseSaveFilename(filename);
-        
-        if (!parsed) {
-            // Если не удалось распарсить, пропускаем этот файл
-            console.warn('[KV Cache Manager] Не удалось распарсить имя файла:', filename);
-            continue;
-        }
-        
-        // Группируем по chatId и timestamp
-        const key = `${parsed.chatId}_${parsed.timestamp}`;
-        if (!groups[key]) {
-            groups[key] = {
-                chatId: parsed.chatId,
-                userName: parsed.userName || null, // Извлекаем из имени файла
-                timestamp: parsed.timestamp, // Извлекаем из имени файла
-                files: []
-            };
-        }
-        groups[key].files.push(filename);
-    }
-    
-    return groups;
-}
-
 // Группировка файлов по чатам, внутри каждого чата - по timestamp
 // Возвращает объект: { [chatId]: [{ timestamp, userName, files }, ...] }
 function groupFilesByChat(filenames) {

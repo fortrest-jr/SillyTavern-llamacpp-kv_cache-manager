@@ -27,20 +27,6 @@
             <hr class="sysHR" />
 
             <div class="kv-cache-manager-section">
-                <h3>Статистика и последнее сохранение</h3>
-                <div id="kv-cache-last-save" class="kv-cache-manager-info">
-                    <p><strong>Последнее сохранение:</strong></p>
-                    <p id="kv-cache-last-save-info">Нет данных</p>
-                </div>
-                <div id="kv-cache-statistics" class="kv-cache-manager-info">
-                    <p><strong>Статистика:</strong></p>
-                    <p id="kv-cache-stats-info">Нет данных</p>
-                </div>
-            </div>
-
-            <hr class="sysHR" />
-
-            <div class="kv-cache-manager-section">
                 <h3>Дополнительные настройки</h3>
                 <div class="kv-cache-manager-field flex-container">
                     <input type="checkbox" id="kv-cache-auto-load" />
@@ -74,7 +60,6 @@
                 </div>
                 <div class="kv-cache-manager-field">
                     <span id="kv-cache-next-save">Следующее сохранение через: - сообщений</span>
-                </div>
             </div>
 
             <hr class="sysHR" />
@@ -84,26 +69,25 @@
 
 <!-- Модалка загрузки кеша -->
 <div id="kv-cache-load-modal" class="dialogue_popup" style="display: none;">
-    <div class="dialogue_popup_content" style="max-width: 90vw; width: 1000px; max-height: 90vh;">
+    <div class="dialogue_popup_content">
         <div class="dialogue_popup_header">
             <h3>Загрузка кеша</h3>
             <button class="dialogue_popup_close" id="kv-cache-load-modal-close">
                 <i class="fa-solid fa-times"></i>
             </button>
         </div>
-        <div class="dialogue_popup_body" style="display: flex; flex-direction: column; height: calc(90vh - 100px);">
+        <div class="dialogue_popup_body">
             <!-- Поиск -->
-            <div class="kv-cache-load-search" style="margin-bottom: 10px;">
-                <input type="text" id="kv-cache-load-search-input" placeholder="Поиск по чату или имени..." 
-                       style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--SmartThemeBorderColor); background: var(--SmartThemeBlurTintColor); color: var(--SmartThemeBodyColor);" />
+            <div class="kv-cache-load-search">
+                <input type="text" id="kv-cache-load-search-input" placeholder="Поиск по чату или имени..." />
             </div>
             
-            <div class="kv-cache-load-content" style="display: flex; flex: 1; gap: 15px; overflow: hidden; flex-direction: row;">
+            <div class="kv-cache-load-content">
                 <!-- Боковая панель с чатами -->
-                <div class="kv-cache-load-chats" style="width: 250px; border-right: 1px solid var(--SmartThemeBorderColor); overflow-y: auto; padding-right: 10px;">
+                <div class="kv-cache-load-chats">
                     <div class="kv-cache-load-chat-item kv-cache-load-chat-item-current" data-chat-id="current">
                         <div class="kv-cache-load-chat-name">
-                            <i class="fa-solid fa-comments" style="margin-right: 5px;"></i>
+                            <i class="fa-solid fa-comments"></i>
                             Текущий чат
                         </div>
                         <div class="kv-cache-load-chat-count">-</div>
@@ -112,9 +96,9 @@
                 </div>
                 
                 <!-- Основная область с файлами -->
-                <div class="kv-cache-load-files" style="flex: 1; overflow-y: auto;">
-                    <div id="kv-cache-load-files-list" style="display: flex; flex-direction: column; gap: 10px;">
-                        <p style="text-align: center; color: var(--SmartThemeBodyColor); padding: 20px;">
+                <div class="kv-cache-load-files">
+                    <div id="kv-cache-load-files-list">
+                        <p class="kv-cache-load-empty">
                             Выберите чат для просмотра файлов
                         </p>
                     </div>
@@ -122,11 +106,11 @@
             </div>
             
             <!-- Кнопки действий -->
-            <div class="dialogue_popup_footer" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--SmartThemeBorderColor); display: flex; justify-content: space-between; align-items: center;">
-                <div id="kv-cache-load-selected-info" style="color: var(--SmartThemeBodyColor);">
+            <div class="dialogue_popup_footer">
+                <div id="kv-cache-load-selected-info">
                     Файл не выбран
                 </div>
-                <div style="display: flex; gap: 10px;">
+                <div>
                     <button id="kv-cache-load-cancel-button" class="menu_button">Отмена</button>
                     <button id="kv-cache-load-confirm-button" class="menu_button" disabled>Загрузить</button>
                 </div>
