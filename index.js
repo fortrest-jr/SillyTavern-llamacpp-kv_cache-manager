@@ -417,7 +417,11 @@ async function getFilesList() {
             const binFiles = (data.files || []).filter(file => 
                 file.name.endsWith('.bin') && !file.isDirectory
             );
-            return binFiles.map(file => file.name);
+            // Возвращаем объекты с именем и размером
+            return binFiles.map(file => ({
+                name: file.name,
+                size: file.size || 0
+            }));
         } else {
             console.error('[KV Cache Manager] Ошибка получения списка файлов:', response.status);
             showToast('error', 'Ошибка получения списка файлов с сервера');
@@ -434,10 +438,11 @@ async function getFilesList() {
 
 // Группировка файлов по чатам, внутри каждого чата - по timestamp
 // Возвращает объект: { [chatId]: [{ timestamp, userName, files }, ...] }
-function groupFilesByChat(filenames) {
+function groupFilesByChat(files) {
     const chats = {};
     
-    for (const filename of filenames) {
+    for (const file of files) {
+        const filename = file.name || file;
         const parsed = parseSaveFilename(filename);
         
         if (!parsed) {
@@ -463,7 +468,12 @@ function groupFilesByChat(filenames) {
             chats[chatId].push(group);
         }
         
-        group.files.push(filename);
+        // Сохраняем объект файла с именем и размером
+        group.files.push({
+            name: filename,
+            size: file.size || 0,
+            slotId: parsed.slotId
+        });
     }
     
     // Сортируем файлы внутри каждого чата от новых к старым (по timestamp)
@@ -578,6 +588,15 @@ function formatTimestampToDate(timestamp) {
     return `${dateStr} ${timeStr}`;
 }
 
+// Форматирование размера файла
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
 // Глобальные переменные для модалки загрузки
 let loadModalData = {
     chats: {},
@@ -589,7 +608,7 @@ let loadModalData = {
 // Открытие модалки загрузки
 async function openLoadModal() {
     const modal = $("#kv-cache-load-modal");
-    modal.show();
+    modal.css('display', 'flex');
     
     // Показываем загрузку
     $("#kv-cache-load-files-list").html('<div class="kv-cache-load-loading"><i class="fa-solid fa-spinner"></i> Загрузка файлов...</div>');
@@ -623,7 +642,7 @@ async function openLoadModal() {
 // Закрытие модалки загрузки
 function closeLoadModal() {
     const modal = $("#kv-cache-load-modal");
-    modal.hide();
+    modal.css('display', 'none');
     loadModalData.selectedGroup = null;
     loadModalData.searchQuery = '';
     $("#kv-cache-load-search-input").val('');
@@ -637,9 +656,13 @@ function renderLoadModalChats() {
     const currentChatId = loadModalData.currentChatId;
     const chats = loadModalData.chats;
     
-    // Обновляем счетчик для текущего чата
+    // Получаем имя текущего чата
+    const currentChatName = getCurrentChatName();
+    
+    // Обновляем имя и счетчик для текущего чата
     const currentChatGroups = chats[currentChatId] || [];
     const currentCount = currentChatGroups.reduce((sum, g) => sum + g.files.length, 0);
+    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(currentChatName);
     $(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
     // Фильтруем чаты по поисковому запросу
@@ -736,7 +759,7 @@ function renderLoadModalFiles(chatId) {
         const userName = group.userName ? `[${group.userName}]` : '';
         
         const groupElement = $(`
-            <div class="kv-cache-load-file-group" data-group-timestamp="${group.timestamp}">
+            <div class="kv-cache-load-file-group collapsed" data-group-timestamp="${group.timestamp}">
                 <div class="kv-cache-load-file-group-header">
                     <div class="kv-cache-load-file-group-title">
                         <i class="fa-solid fa-calendar"></i>
@@ -755,19 +778,18 @@ function renderLoadModalFiles(chatId) {
         
         // Добавляем файлы в группу
         const content = groupElement.find('.kv-cache-load-file-group-content');
-        for (const filename of group.files) {
-            const parsed = parseSaveFilename(filename);
-            if (!parsed) continue;
+        for (const file of group.files) {
+            const fileSize = formatFileSize(file.size);
             
             const fileItem = $(`
-                <div class="kv-cache-load-file-item" data-filename="${filename}" data-timestamp="${group.timestamp}">
+                <div class="kv-cache-load-file-item" data-filename="${file.name}" data-timestamp="${group.timestamp}">
                     <div class="kv-cache-load-file-item-info">
                         <div class="kv-cache-load-file-item-name">
                             <i class="fa-solid fa-file"></i>
-                            ${filename}
+                            ${file.name}
                         </div>
                         <div class="kv-cache-load-file-item-meta">
-                            <span>Слот ${parsed.slotId}</span>
+                            <span>${fileSize}</span>
                         </div>
                     </div>
                 </div>
@@ -801,11 +823,16 @@ function renderLoadModalFiles(chatId) {
         groupElement.find('.kv-cache-load-file-group-header').on('click', function(e) {
             // Не сворачиваем при клике на файл
             if ($(e.target).closest('.kv-cache-load-file-item').length) return;
-            // Не сворачиваем при клике на иконку выбора группы
-            if ($(e.target).hasClass('kv-cache-load-file-group-toggle')) {
+            
+            // При клике на иконку или заголовок - сворачиваем/разворачиваем
+            if ($(e.target).hasClass('kv-cache-load-file-group-toggle') || 
+                $(e.target).closest('.kv-cache-load-file-group-title').length ||
+                $(e.target).closest('.kv-cache-load-file-group-info').length) {
                 groupElement.toggleClass('collapsed');
-            } else {
-                // При клике на заголовок выбираем группу
+            }
+            
+            // При клике на заголовок (не на иконку) также выбираем группу
+            if (!$(e.target).hasClass('kv-cache-load-file-group-toggle')) {
                 $(".kv-cache-load-file-item").removeClass('selected');
                 $(".kv-cache-load-file-group").removeClass('selected');
                 groupElement.addClass('selected');
@@ -834,15 +861,24 @@ async function loadSelectedCache() {
     
     // Парсим slotId из имён файлов
     const filesToLoad = [];
-    for (const filename of selectedGroup.files) {
-        const parsed = parseSaveFilename(filename);
-        if (parsed) {
+    for (const file of selectedGroup.files) {
+        const filename = file.name;
+        if (file.slotId !== undefined) {
             filesToLoad.push({
                 filename: filename,
-                slotId: parsed.slotId
+                slotId: file.slotId
             });
         } else {
-            console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
+            // Fallback: парсим из имени файла
+            const parsed = parseSaveFilename(filename);
+            if (parsed) {
+                filesToLoad.push({
+                    filename: filename,
+                    slotId: parsed.slotId
+                });
+            } else {
+                console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
+            }
         }
     }
     

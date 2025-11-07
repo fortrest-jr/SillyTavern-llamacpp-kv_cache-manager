@@ -42,6 +42,15 @@
 /* Стили для модалки загрузки */
 #kv-cache-load-modal {
     z-index: 10000;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #kv-cache-load-modal .dialogue_popup_content {
@@ -60,13 +69,26 @@
     margin-bottom: 10px;
 }
 
-#kv-cache-load-search-input {
-    width: 100%;
-    padding: 8px;
-    border-radius: 4px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    background: var(--SmartThemeBlurTintColor);
+/* Поле поиска использует стили text_pole из SillyTavern */
+
+/* Стили для кнопки закрытия модалки */
+#kv-cache-load-modal .dialogue_popup_close {
+    background: transparent;
+    border: none;
     color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#kv-cache-load-modal .dialogue_popup_close:hover {
+    opacity: 0.7;
+}
+
+#kv-cache-load-modal .dialogue_popup_close i {
+    font-size: 1.2em;
 }
 
 .kv-cache-load-content {
