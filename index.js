@@ -36,7 +36,7 @@ function updateNextSaveIndicator() {
         return;
     }
     
-    const chatId = getCurrentChatId() || 'unknown';
+    const chatId = getNormalizedChatId();
     const currentCount = messageCounters[chatId] || 0;
     const interval = extensionSettings.saveInterval;
     const remaining = Math.max(0, interval - currentCount);
@@ -55,7 +55,7 @@ function incrementMessageCounter() {
         return;
     }
     
-    const chatId = getCurrentChatId() || 'unknown';
+    const chatId = getNormalizedChatId();
     if (!messageCounters[chatId]) {
         messageCounters[chatId] = 0;
     }
@@ -196,11 +196,21 @@ function formatTimestamp(date = new Date()) {
     return `${year}${month}${day}${hour}${minute}${second}`;
 }
 
+// Нормализация chatId для использования в именах файлов и сравнениях
+function normalizeChatId(chatId) {
+    return String(chatId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+// Получение нормализованного chatId текущего чата
+function getNormalizedChatId() {
+    return normalizeChatId(getCurrentChatId());
+}
+
 // Генерация имени файла в едином формате
 // Формат: {chatId}_{timestamp}_{named_}{userName}_slot{slotId}.bin
 // Если userName указан, добавляется префикс "named_"
 function generateSaveFilename(chatId, timestamp, slotId, userName = null) {
-    const safeChatId = String(chatId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeChatId = normalizeChatId(chatId);
     const safeSlotId = String(slotId);
     const safeUserFiller = userName ? `_named_${userName.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
 
@@ -547,8 +557,8 @@ async function saveCache(requestUserName = false) {
         userName = userName.trim();
     }
     
-    // Получаем ID чата или используем дефолтное значение
-    const chatId = getCurrentChatId() || 'unknown';
+    // Получаем нормализованный ID чата
+    const chatId = getNormalizedChatId();
     
     showToast('info', 'Начинаю сохранение кеша...');
     
@@ -658,7 +668,7 @@ async function deleteFile(filename) {
 
 // Ротация файлов: удаление старых автосохранений для текущего чата
 async function rotateAutoSaveFiles() {
-    const chatId = getCurrentChatId() || 'unknown';
+    const chatId = getNormalizedChatId();
     const maxFiles = extensionSettings.maxFiles;
     
     try {
@@ -672,6 +682,8 @@ async function rotateAutoSaveFiles() {
                    parsed.chatId === chatId && 
                    !parsed.userName; // Только автосохранения (без имени пользователя)
         });
+        
+        console.debug(`[KV Cache Manager] Найдено ${autoSaveFiles.length} автосохранений для чата ${chatId} (лимит: ${maxFiles})`);
         
         // Сортируем по timestamp (от новых к старым)
         autoSaveFiles.sort((a, b) => {
@@ -687,8 +699,13 @@ async function rotateAutoSaveFiles() {
             console.debug(`[KV Cache Manager] Удаление ${filesToDelete.length} старых автосохранений для чата ${chatId}`);
             
             for (const file of filesToDelete) {
-                await deleteFile(file.name);
+                const deleted = await deleteFile(file.name);
+                if (deleted) {
+                    console.debug(`[KV Cache Manager] Удален файл: ${file.name}`);
+                }
             }
+        } else {
+            console.debug(`[KV Cache Manager] Ротация не требуется: ${autoSaveFiles.length} файлов <= ${maxFiles}`);
         }
     } catch (e) {
         console.warn('[KV Cache Manager] Ошибка при ротации файлов:', e);
@@ -754,9 +771,8 @@ async function openLoadModal() {
     
     // Группируем файлы по чатам
     loadModalData.chats = groupFilesByChat(filesList);
-    // Получаем текущий chatId и нормализуем его (как в generateSaveFilename)
-    const rawChatId = getCurrentChatId() || 'unknown';
-    loadModalData.currentChatId = String(rawChatId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    // Получаем нормализованный chatId
+    loadModalData.currentChatId = getNormalizedChatId();
     
     // Отображаем чаты и файлы
     renderLoadModalChats();
@@ -1064,7 +1080,7 @@ jQuery(async () => {
     updateSlotsList();
     
     // Инициализируем счетчик для текущего чата
-    const initialChatId = getCurrentChatId() || 'unknown';
+    const initialChatId = getNormalizedChatId();
     if (!messageCounters[initialChatId]) {
         messageCounters[initialChatId] = 0;
     }
