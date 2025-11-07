@@ -698,11 +698,17 @@ async function rotateAutoSaveFiles() {
             const filesToDelete = autoSaveFiles.slice(maxFiles);
             console.debug(`[KV Cache Manager] Удаление ${filesToDelete.length} старых автосохранений для чата ${chatId}`);
             
+            let deletedCount = 0;
             for (const file of filesToDelete) {
                 const deleted = await deleteFile(file.name);
                 if (deleted) {
+                    deletedCount++;
                     console.debug(`[KV Cache Manager] Удален файл: ${file.name}`);
                 }
+            }
+            
+            if (deletedCount > 0 && extensionSettings.showNotifications) {
+                showToast('warning', `Удалено ${deletedCount} старых автосохранений`, 'Ротация файлов');
             }
         } else {
             console.debug(`[KV Cache Manager] Ротация не требуется: ${autoSaveFiles.length} файлов <= ${maxFiles}`);
