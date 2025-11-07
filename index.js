@@ -166,6 +166,46 @@ function generateSaveFilename(chatId, timestamp, slotId, userName = null) {
     return `${safeChatId}_${timestamp}${safeUserFiller}_slot${safeSlotId}.bin`;
 }
 
+// Парсинг имени файла для извлечения данных
+// Возвращает { chatId, timestamp, userName, slotId } или null при ошибке
+function parseSaveFilename(filename) {
+    // Убираем расширение .bin
+    const nameWithoutExt = filename.replace(/\.bin$/, '');
+    
+    // Парсим с конца: ищем _slot{число}
+    const slotMatch = nameWithoutExt.match(/_slot(\d+)$/);
+    if (!slotMatch) {
+        return null;
+    }
+    
+    const slotId = parseInt(slotMatch[1], 10);
+    let beforeSlot = nameWithoutExt.slice(0, -slotMatch[0].length);
+    
+    // Проверяем наличие _named_{userName} перед _slot
+    let userName = null;
+    const namedMatch = beforeSlot.match(/_named_(.+)$/);
+    if (namedMatch) {
+        userName = namedMatch[1];
+        beforeSlot = beforeSlot.slice(0, -namedMatch[0].length);
+    }
+    
+    // Ищем timestamp (14 цифр) с конца
+    const timestampMatch = beforeSlot.match(/_(\d{14})$/);
+    if (!timestampMatch) {
+        return null;
+    }
+    
+    const timestamp = timestampMatch[1];
+    const chatId = beforeSlot.slice(0, -timestampMatch[0].length);
+    
+    return {
+        chatId: chatId,
+        timestamp: timestamp,
+        userName: userName,
+        slotId: slotId
+    };
+}
+
 // Получение информации о всех слотах через /slots
 async function getAllSlotsInfo() {
     const llamaUrl = getLlamaUrl();
@@ -363,17 +403,16 @@ function getSavesList() {
 }
 
 // Добавление сохранения в список
+// Храним только список имён файлов, всё остальное извлекается из имён файлов
 function addSaveToList(timestamp, chatName, userName, files) {
     if (!extensionSettings.saves) {
         extensionSettings.saves = [];
     }
     
     // Добавляем сохранение в начало списка
+    // timestamp, userName, chatId и slotId теперь извлекаются из имён файлов при загрузке
     extensionSettings.saves.unshift({
-        timestamp: timestamp,
-        chatName: chatName,
-        userName: userName || null,
-        files: files.map(f => ({ filename: f.filename, slotId: f.slotId }))
+        files: files.map(f => f.filename) // Храним только имена файлов
     });
     
     // Ограничиваем количество сохранений (храним последние N)
@@ -398,21 +437,42 @@ function removeSaveFromList(timestamp, chatName) {
     saveSettingsDebounced();
 }
 
-// Группировка сохранений по имени чата и timestamp (из списка в настройках)
+// Группировка сохранений по chatId и timestamp (из имён файлов)
 function groupSavesByChatAndTimestamp(saves) {
     const groups = {};
     
     for (const save of saves) {
-        const key = `${save.chatName}_${save.timestamp}`;
+        // Парсим первый файл для получения chatId и timestamp
+        if (!save.files || save.files.length === 0) {
+            continue;
+        }
+        
+        // files теперь массив строк (имён файлов)
+        const firstFilename = typeof save.files[0] === 'string' 
+            ? save.files[0] 
+            : save.files[0].filename; // Поддержка старого формата
+        
+        const parsed = parseSaveFilename(firstFilename);
+        
+        if (!parsed) {
+            // Если не удалось распарсить, пропускаем это сохранение
+            console.warn('[KV Cache Manager] Не удалось распарсить имя файла:', firstFilename);
+            continue;
+        }
+        
+        // Группируем по chatId и timestamp
+        const key = `${parsed.chatId}_${parsed.timestamp}`;
         if (!groups[key]) {
             groups[key] = {
-                chatName: save.chatName,
-                userName: save.userName,
-                timestamp: save.timestamp,
+                chatId: parsed.chatId,
+                userName: parsed.userName || null, // Извлекаем из имени файла
+                timestamp: parsed.timestamp, // Извлекаем из имени файла
                 files: []
             };
         }
-        groups[key].files.push(...save.files);
+        // Преобразуем в массив строк, если нужно
+        const fileList = save.files.map(f => typeof f === 'string' ? f : f.filename);
+        groups[key].files.push(...fileList);
     }
     
     return groups;
@@ -453,7 +513,6 @@ async function saveCache(requestUserName = false) {
     
     // Генерируем timestamp один раз для всех слотов в этом сохранении
     const timestamp = formatTimestamp();
-    const chatName = getCurrentChatName();
     
     let savedCount = 0;
     let errors = [];
@@ -465,7 +524,7 @@ async function saveCache(requestUserName = false) {
             console.debug(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
-                savedFiles.push({ filename: filename, slotId: slotId });
+                savedFiles.push({ filename: filename }); // Храним только имя файла
                 console.debug(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
             } else {
                 errors.push(`слот ${slotId}`);
@@ -478,7 +537,7 @@ async function saveCache(requestUserName = false) {
     
     if (savedCount > 0) {
         // Добавляем сохранение в список
-        addSaveToList(timestamp, chatName, userName, savedFiles);
+        addSaveToList(timestamp, null, userName, savedFiles);
         
         // Формируем сообщение об успехе
         if (errors.length > 0) {
@@ -545,8 +604,27 @@ async function onLoadButtonClick() {
             second: '2-digit'
         });
         const slotsCount = group.files.length;
-        const chatName = group.chatName;
-        return `${index + 1}. ${chatName} - ${dateStr} ${timeStr} (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`;
+        
+        // Формируем строку с информацией
+        let infoParts = [];
+        
+        // ChatId
+        if (group.chatId) {
+            infoParts.push(`Chat: ${group.chatId}`);
+        }
+        
+        // Имя пользователя (если есть)
+        if (group.userName) {
+            infoParts.push(`[${group.userName}]`);
+        }
+        
+        // Дата и время
+        infoParts.push(`${dateStr} ${timeStr}`);
+        
+        // Количество слотов
+        infoParts.push(`(${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`);
+        
+        return `${index + 1}. ${infoParts.join(' - ')}`;
     }).join('\n');
     
     const choice = prompt(`Выберите сохранение для загрузки:\n\n${options}\n\nВведите номер (1-${groupKeys.length}):`);
@@ -562,10 +640,20 @@ async function onLoadButtonClick() {
     }
     
     const selectedGroup = groups[groupKeys[index]];
-    const filesToLoad = selectedGroup.files.map(f => ({
-        filename: f.filename,
-        slotId: f.slotId
-    }));
+    
+    // Парсим slotId из имён файлов
+    const filesToLoad = [];
+    for (const filename of selectedGroup.files) {
+        const parsed = parseSaveFilename(filename);
+        if (parsed) {
+            filesToLoad.push({
+                filename: filename,
+                slotId: parsed.slotId
+            });
+        } else {
+            console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
+        }
+    }
     
     if (filesToLoad.length === 0) {
         showToast('warning', 'Не найдено файлов для загрузки');
