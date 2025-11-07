@@ -601,9 +601,7 @@ async function saveCache(requestUserName = false) {
         } else {
             // Для автосохранений (без userName) показываем другое сообщение
             if (!userName) {
-                if (extensionSettings.showNotifications) {
-                    showToast('success', `Автосохранено ${savedCount} слотов`, 'Автосохранение');
-                }
+                showToast('success', `Автосохранено ${savedCount} слотов`, 'Автосохранение');
             } else {
                 showToast('success', `Сохранено ${savedCount} из ${slots.length} слотов`);
             }
@@ -723,7 +721,6 @@ async function rotateAutoSaveFiles() {
             return parsedB.timestamp.localeCompare(parsedA.timestamp);
         });
         
-        // Если файлов больше лимита, удаляем старые
         if (autoSaveFiles.length > maxFiles) {
             const filesToDelete = autoSaveFiles.slice(maxFiles);
             console.debug(`[KV Cache Manager] Удаление ${filesToDelete.length} старых автосохранений для чата ${chatId}`);
@@ -744,6 +741,7 @@ async function rotateAutoSaveFiles() {
             console.debug(`[KV Cache Manager] Ротация не требуется: ${autoSaveFiles.length} файлов <= ${maxFiles}`);
         }
     } catch (e) {
+        showToast('error', `Ошибка при ротации файлов: ${e.message}`, 'Ротация файлов');
         console.warn('[KV Cache Manager] Ошибка при ротации файлов:', e);
     }
 }
