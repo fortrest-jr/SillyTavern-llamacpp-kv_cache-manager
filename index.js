@@ -4,7 +4,7 @@
 
 // Импортируем необходимые функции
 import { extension_settings, getContext, loadExtensionSettings } from "../../../extensions.js";
-import { saveSettingsDebounced, eventSource, event_types } from "../../../../script.js";
+import { saveSettingsDebounced, eventSource, event_types, getCurrentChatId } from "../../../../script.js";
 import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
 
 // Имя расширения должно совпадать с именем папки
@@ -155,19 +155,15 @@ function formatTimestamp(date = new Date()) {
     return `${year}${month}${day}${hour}${minute}${second}`;
 }
 
-// Генерация имени файла для автосохранения
-function generateAutoSaveFilename(slotId) {
-    const chatName = getCurrentChatName().replace(/[^a-zA-Z0-9_-]/g, '_');
-    const timestamp = formatTimestamp();
-    return `${chatName}_${timestamp}_slot${slotId}.bin`;
-}
+// Генерация имени файла в едином формате
+// Формат: {chatId}_{timestamp}_{named_}{userName}_slot{slotId}.bin
+// Если userName указан, добавляется префикс "named_"
+function generateSaveFilename(chatId, timestamp, slotId, userName = null) {
+    const safeChatId = String(chatId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeSlotId = String(slotId);
+    const safeUserFiller = userName ? `_named_${userName.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
 
-// Генерация имени файла для ручного сохранения
-function generateManualSaveFilename(userName, slotId) {
-    const chatName = getCurrentChatName().replace(/[^a-zA-Z0-9_-]/g, '_');
-    const safeUserName = userName.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const timestamp = formatTimestamp();
-    return `${safeUserName}_${chatName}_${timestamp}_slot${slotId}.bin`;
+    return `${safeChatId}_${timestamp}${safeUserFiller}_slot${safeSlotId}.bin`;
 }
 
 // Получение информации о всех слотах через /slots
@@ -439,6 +435,9 @@ async function saveCache(requestUserName = false) {
         userName = userName.trim();
     }
     
+    // Получаем ID чата или используем дефолтное значение
+    const chatId = getCurrentChatId() || 'unknown';
+    
     showToast('info', 'Начинаю сохранение кеша...');
     
     // Получаем все валидные слоты
@@ -452,17 +451,17 @@ async function saveCache(requestUserName = false) {
     showToast('info', `Найдено ${slots.length} активных слотов`);
     console.debug(`[KV Cache Manager] Начинаю сохранение ${slots.length} слотов:`, slots);
     
-    let savedCount = 0;
-    let errors = [];
+    // Генерируем timestamp один раз для всех слотов в этом сохранении
     const timestamp = formatTimestamp();
     const chatName = getCurrentChatName();
+    
+    let savedCount = 0;
+    let errors = [];
     const savedFiles = [];
     
     for (const slotId of slots) {
         try {
-            const filename = userName 
-                ? generateManualSaveFilename(userName, slotId)
-                : generateAutoSaveFilename(slotId);
+            const filename = generateSaveFilename(chatId, timestamp, slotId, userName);
             console.debug(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
