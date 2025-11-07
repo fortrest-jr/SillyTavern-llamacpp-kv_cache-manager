@@ -1092,8 +1092,8 @@ jQuery(async () => {
         updateSlotsList();
     });
     
-    // Подписка на событие отправки сообщения для автосохранения
-    eventSource.on(event_types.MESSAGE_SENT, () => {
+    // Подписка на событие получения сообщения для автосохранения
+    eventSource.on(event_types.MESSAGE_RECEIVED, () => {
         incrementMessageCounter();
     });
     
