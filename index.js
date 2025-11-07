@@ -564,8 +564,8 @@ async function checkServerAvailability(llamaUrl) {
     } catch (e) {
         if (e.name !== 'AbortError') {
             console.debug(`[KV Cache Manager] Сервер (url ${llamaUrl}health) недоступен:`, e);
-            showToast('error', `Сервер llama.cpp недоступен: ${llamaUrl}health`);
         }
+        showToast('error', `Сервер llama.cpp недоступен: ${llamaUrl}health`);
         return false;
     }
 }
