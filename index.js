@@ -10,7 +10,6 @@ import { textgen_types, textgenerationwebui_settings } from '../../../textgen-se
 // Имя расширения должно совпадать с именем папки
 const extensionName = "SillyTavern-llamacpp-kv_cache-manager";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
-const extensionSettings = extension_settings[extensionName];
 
 const defaultSettings = {
     enabled: true,
@@ -22,16 +21,11 @@ const defaultSettings = {
     saves: [] // Список сохранений: [{ timestamp, chatName, userName, files: [{ filename, slotId }] }]
 };
 
+const extensionSettings = extension_settings[extensionName] || defaultSettings;
+
 
 // Загрузка настроек
 async function loadSettings() {
-    // Создаем настройки, если их нет
-    extensionSettings = extensionSettings || {};
-    if (Object.keys(extensionSettings).length === 0) {
-        Object.assign(extensionSettings, defaultSettings);
-    }
-
-    // Обновляем настройки в UI
     $("#kv-cache-enabled").prop("checked", extensionSettings.enabled).trigger("input");
     $("#kv-cache-save-interval").val(extensionSettings.saveInterval).trigger("input");
     $("#kv-cache-max-files").val(extensionSettings.maxFiles).trigger("input");
@@ -668,10 +662,10 @@ jQuery(async () => {
     // Инициализация больше не нужна - количество слотов определяется из ответа API
     
     // Показываем placeholder для списка слотов (обновится при сохранении/загрузке)
-    updateSlotsListPlaceholder();
+    updateSlotsList();
     
-    // Обновляем список слотов только при сохранении/загрузке
-    $("#kv-cache-save-button, #kv-cache-save-now-button, #kv-cache-load-button").on("click", () => {
+    // Обновляем список слотов при сохранении
+    $("#kv-cache-save-button, #kv-cache-save-now-button").on("click", () => {
         setTimeout(() => updateSlotsList(), 1000);
     });
 });
