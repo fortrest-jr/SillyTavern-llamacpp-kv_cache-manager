@@ -19,7 +19,6 @@ const defaultSettings = {
     maxFiles: 10,
     showNotifications: true,
     validateCache: true,
-    apiUrl: 'http://127.0.0.1:8080',
     saves: [] // Список сохранений: [{ timestamp, chatName, userName, files: [{ filename, slotId }] }]
 };
 
@@ -27,20 +26,19 @@ const defaultSettings = {
 // Загрузка настроек
 async function loadSettings() {
     // Создаем настройки, если их нет
-    extension_settings[extensionName] = extension_settings[extensionName] || {};
-    if (Object.keys(extension_settings[extensionName]).length === 0) {
-        Object.assign(extension_settings[extensionName], defaultSettings);
+    extensionSettings = extensionSettings || {};
+    if (Object.keys(extensionSettings).length === 0) {
+        Object.assign(extensionSettings, defaultSettings);
     }
 
     // Обновляем настройки в UI
-    const settings = extension_settings[extensionName];
+    const settings = extensionSettings;
     $("#kv-cache-enabled").prop("checked", settings.enabled).trigger("input");
     $("#kv-cache-save-interval").val(settings.saveInterval).trigger("input");
     $("#kv-cache-max-files").val(settings.maxFiles).trigger("input");
     $("#kv-cache-auto-load").prop("checked", settings.autoLoadOnChatSwitch).trigger("input");
     $("#kv-cache-show-notifications").prop("checked", settings.showNotifications).trigger("input");
     $("#kv-cache-validate").prop("checked", settings.validateCache).trigger("input");
-    $("#kv-cache-api-url").val(settings.apiUrl || defaultSettings.apiUrl).trigger("input");
     
 }
 
@@ -51,7 +49,7 @@ function showToast(type, message, title = 'KV Cache Manager') {
         return;
     }
 
-    const settings = extension_settings[extensionName] || defaultSettings;
+    const settings = extensionSettings || defaultSettings;
     if (!settings.showNotifications) {
         return;
     }
@@ -76,62 +74,49 @@ function showToast(type, message, title = 'KV Cache Manager') {
 // Обработчики для чекбоксов и полей ввода
 function onEnabledChange(event) {
     const value = Boolean($(event.target).prop("checked"));
-    extension_settings[extensionName].enabled = value;
+    extensionSettings.enabled = value;
     saveSettingsDebounced();
     showToast('success', `Автосохранение ${value ? 'включено' : 'отключено'}`);
 }
 
 function onSaveIntervalChange(event) {
     const value = parseInt($(event.target).val()) || 5;
-    extension_settings[extensionName].saveInterval = value;
+    extensionSettings.saveInterval = value;
     saveSettingsDebounced();
     showToast('info', `Интервал сохранения установлен: ${value} сообщений`);
 }
 
 function onMaxFilesChange(event) {
     const value = parseInt($(event.target).val()) || 10;
-    extension_settings[extensionName].maxFiles = value;
+    extensionSettings.maxFiles = value;
     saveSettingsDebounced();
     showToast('info', `Максимум файлов установлен: ${value}`);
 }
 
 function onAutoLoadChange(event) {
     const value = Boolean($(event.target).prop("checked"));
-    extension_settings[extensionName].autoLoadOnChatSwitch = value;
+    extensionSettings.autoLoadOnChatSwitch = value;
     saveSettingsDebounced();
     showToast('success', `Автозагрузка ${value ? 'включена' : 'отключена'}`);
 }
 
 function onShowNotificationsChange(event) {
     const value = Boolean($(event.target).prop("checked"));
-    extension_settings[extensionName].showNotifications = value;
+    extensionSettings.showNotifications = value;
     saveSettingsDebounced();
     showToast('success', `Уведомления ${value ? 'включены' : 'отключены'}`);
 }
 
 function onValidateChange(event) {
     const value = Boolean($(event.target).prop("checked"));
-    extension_settings[extensionName].validateCache = value;
+    extensionSettings.validateCache = value;
     saveSettingsDebounced();
     showToast('success', `Проверка валидности ${value ? 'включена' : 'отключена'}`);
 }
 
-function onApiUrlChange(event) {
-    const value = $(event.target).val().trim() || defaultSettings.apiUrl;
-    extension_settings[extensionName].apiUrl = value;
-    saveSettingsDebounced();
-    showToast('info', `URL API установлен: ${value}`);
-    // Обновляем список слотов после изменения URL
-    setTimeout(() => updateSlotsList(), 500);
-}
-
-
 // Получение URL llama.cpp сервера
 function getLlamaUrl() {
-    const settings = extension_settings[extensionName] || defaultSettings;
-    const provided_url = textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP]
-    showToast('warning', 'provided_url: ' + provided_url);
-    return provided_url || settings.apiUrl || defaultSettings.apiUrl;
+    return textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
 }
 
 // Получение имени текущего чата
@@ -307,7 +292,7 @@ function isSlotValid(slotInfo) {
 
 // Получение всех активных слотов с проверкой валидности
 async function getActiveSlots() {
-    const settings = extension_settings[extensionName] || defaultSettings;
+    const settings = extensionSettings || defaultSettings;
     
     // Получаем информацию о всех слотах через /slots
     const slotsData = await getAllSlotsInfo();
@@ -500,13 +485,13 @@ function parseCacheFilename(filename) {
 
 // Получение списка сохранений из настроек
 function getSavesList() {
-    const settings = extension_settings[extensionName] || defaultSettings;
+    const settings = extensionSettings || defaultSettings;
     return settings.saves || [];
 }
 
 // Добавление сохранения в список
 function addSaveToList(timestamp, chatName, userName, files) {
-    const settings = extension_settings[extensionName] || defaultSettings;
+    const settings = extensionSettings || defaultSettings;
     if (!settings.saves) {
         settings.saves = [];
     }
@@ -530,7 +515,7 @@ function addSaveToList(timestamp, chatName, userName, files) {
 
 // Удаление сохранения из списка
 function removeSaveFromList(timestamp, chatName) {
-    const settings = extension_settings[extensionName] || defaultSettings;
+    const settings = extensionSettings || defaultSettings;
     if (!settings.saves) {
         return;
     }
@@ -843,7 +828,6 @@ jQuery(async () => {
     $("#kv-cache-auto-load").on("input", onAutoLoadChange);
     $("#kv-cache-show-notifications").on("input", onShowNotificationsChange);
     $("#kv-cache-validate").on("input", onValidateChange);
-    $("#kv-cache-api-url").on("input", onApiUrlChange);
     
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
