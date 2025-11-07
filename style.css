@@ -18,6 +18,19 @@
     min-width: 100px;
 }
 
+/* Стили для disabled элементов */
+.kv-cache-manager-field input:disabled,
+.kv-cache-manager-field input[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.kv-cache-manager-field label[for]:has(+ input:disabled),
+.kv-cache-manager-field:has(input:disabled) label {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .kv-cache-manager-info {
     margin-top: 10px;
     padding: 10px;

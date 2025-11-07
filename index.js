@@ -106,7 +106,7 @@ function onValidateChange(event) {
     const value = Boolean($(event.target).prop("checked"));
     extensionSettings.checkSlotUsage = value;
     saveSettingsDebounced();
-    showToast('success', `Проверка использования слота перед сохранением ${value ? 'включена' : 'отключена'}`);
+    showToast('success', `Проверка использования слота ${value ? 'включена' : 'отключена'}`);
 }
 
 // Получение URL llama.cpp сервера
@@ -644,7 +644,7 @@ function renderLoadModalChats() {
     // Обновляем ID и счетчик для текущего чата
     const currentChatGroups = chats[currentChatId] || [];
     const currentCount = currentChatGroups.reduce((sum, g) => sum + g.files.length, 0);
-    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(currentChatId || 'unknown');
+    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text((currentChatId || 'unknown') + ' [текущий]');
     $(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
     // Фильтруем чаты по поисковому запросу

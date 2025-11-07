@@ -29,7 +29,7 @@
             <div class="kv-cache-manager-section">
                 <h3>Дополнительные настройки</h3>
                 <div class="kv-cache-manager-field flex-container">
-                    <input type="checkbox" id="kv-cache-auto-load" />
+                    <input type="checkbox" id="kv-cache-auto-load" disabled />
                     <label for="kv-cache-auto-load">Автозагрузка при переключении на чат</label>
                 </div>
                 <div class="kv-cache-manager-field flex-container">
@@ -38,7 +38,7 @@
                 </div>
                 <div class="kv-cache-manager-field flex-container">
                     <input type="checkbox" id="kv-cache-validate" />
-                    <label for="kv-cache-validate">Проверять валидность кеша</label>
+                    <label for="kv-cache-validate">Проверять использование слота</label>
                 </div>
             </div>
 
@@ -47,16 +47,16 @@
             <div class="kv-cache-manager-section">
                 <h3>Автоматическое сохранение</h3>
                 <div class="kv-cache-manager-field flex-container">
-                    <input type="checkbox" id="kv-cache-enabled" />
+                    <input type="checkbox" id="kv-cache-enabled" disabled />
                     <label for="kv-cache-enabled">Включить автосохранение</label>
                 </div>
                 <div class="kv-cache-manager-field flex-container">
                     <label for="kv-cache-save-interval">Сохранять каждые N сообщений:</label>
-                    <input type="number" id="kv-cache-save-interval" class="text_pole" min="1" value="5" />
+                    <input type="number" id="kv-cache-save-interval" class="text_pole" min="1" value="5" disabled />
                 </div>
                 <div class="kv-cache-manager-field flex-container">
                     <label for="kv-cache-max-files">Максимум файлов на сессию:</label>
-                    <input type="number" id="kv-cache-max-files" class="text_pole" min="1" value="10" />
+                    <input type="number" id="kv-cache-max-files" class="text_pole" min="1" value="10" disabled />
                 </div>
                 <div class="kv-cache-manager-field">
                     <span id="kv-cache-next-save">Следующее сохранение через: - сообщений</span>
