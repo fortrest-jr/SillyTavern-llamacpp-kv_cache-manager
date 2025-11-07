@@ -461,6 +461,51 @@ function groupFilesByChatAndTimestamp(filenames) {
     return groups;
 }
 
+// Группировка файлов по чатам, внутри каждого чата - по timestamp
+// Возвращает объект: { [chatId]: [{ timestamp, userName, files }, ...] }
+function groupFilesByChat(filenames) {
+    const chats = {};
+    
+    for (const filename of filenames) {
+        const parsed = parseSaveFilename(filename);
+        
+        if (!parsed) {
+            // Если не удалось распарсить, пропускаем этот файл
+            console.warn('[KV Cache Manager] Не удалось распарсить имя файла:', filename);
+            continue;
+        }
+        
+        const chatId = parsed.chatId;
+        if (!chats[chatId]) {
+            chats[chatId] = [];
+        }
+        
+        // Ищем существующую группу с таким timestamp в этом чате
+        let group = chats[chatId].find(g => g.timestamp === parsed.timestamp);
+        if (!group) {
+            group = {
+                chatId: chatId,
+                timestamp: parsed.timestamp,
+                userName: parsed.userName || null,
+                files: []
+            };
+            chats[chatId].push(group);
+        }
+        
+        group.files.push(filename);
+    }
+    
+    // Сортируем файлы внутри каждого чата от новых к старым (по timestamp)
+    for (const chatId in chats) {
+        chats[chatId].sort((a, b) => {
+            // Сравниваем timestamp как строки (они в формате YYYYMMDDHHMMSS)
+            return b.timestamp.localeCompare(a.timestamp);
+        });
+    }
+    
+    return chats;
+}
+
 // Общая функция сохранения кеша
 async function saveCache(requestUserName = false) {
     let userName = null;
@@ -539,7 +584,31 @@ async function onSaveNowButtonClick() {
     await saveCache(false); // Не запрашиваем имя пользователя
 }
 
-async function onLoadButtonClick() {
+// Форматирование даты и времени из timestamp
+function formatTimestampToDate(timestamp) {
+    const date = new Date(
+        parseInt(timestamp.substring(0, 4)), // год
+        parseInt(timestamp.substring(4, 6)) - 1, // месяц (0-based)
+        parseInt(timestamp.substring(6, 8)), // день
+        parseInt(timestamp.substring(8, 10)), // час
+        parseInt(timestamp.substring(10, 12)), // минута
+        parseInt(timestamp.substring(12, 14)) // секунда
+    );
+    const dateStr = date.toLocaleDateString('ru-RU', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit' 
+    });
+    const timeStr = date.toLocaleTimeString('ru-RU', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit'
+    });
+    return `${dateStr} ${timeStr}`;
+}
+
+// Внутренняя функция для отображения модалки загрузки для конкретного чата
+async function showLoadModalForChat(targetChatId = null) {
     showToast('info', 'Начинаю загрузку кеша...');
     
     // Получаем список файлов через API плагина
@@ -550,124 +619,151 @@ async function onLoadButtonClick() {
         return;
     }
     
-    // Группируем файлы по имени чата и timestamp
-    const groups = groupFilesByChatAndTimestamp(filesList);
-    const groupKeys = Object.keys(groups).sort().reverse(); // Сортируем по убыванию (новые первыми)
+    // Группируем файлы по чатам
+    const chats = groupFilesByChat(filesList);
     
-    if (groupKeys.length === 0) {
+    if (Object.keys(chats).length === 0) {
         showToast('warning', 'Не найдено сохранений для загрузки');
         return;
     }
     
+    // Получаем текущий chatId
+    const currentChatId = targetChatId || getCurrentChatId() || 'unknown';
+    
+    // Разделяем чаты на текущий и остальные
+    const currentChatGroups = chats[currentChatId] || [];
+    const otherChats = Object.keys(chats).filter(chatId => chatId !== currentChatId);
+    
     // Формируем список для выбора
-    const options = groupKeys.map((key, index) => {
-        const group = groups[key];
-        const date = new Date(
-            parseInt(group.timestamp.substring(0, 4)), // год
-            parseInt(group.timestamp.substring(4, 6)) - 1, // месяц (0-based)
-            parseInt(group.timestamp.substring(6, 8)), // день
-            parseInt(group.timestamp.substring(8, 10)), // час
-            parseInt(group.timestamp.substring(10, 12)), // минута
-            parseInt(group.timestamp.substring(12, 14)) // секунда
-        );
-        // Форматируем дату и время
-        const dateStr = date.toLocaleDateString('ru-RU', { 
-            year: 'numeric', 
-            month: '2-digit', 
-            day: '2-digit' 
-        });
-        const timeStr = date.toLocaleTimeString('ru-RU', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-        });
-        const slotsCount = group.files.length;
-        
-        // Формируем строку с информацией
-        let infoParts = [];
-        
-        // ChatId
-        if (group.chatId) {
-            infoParts.push(`Chat: ${group.chatId}`);
-        }
-        
-        // Имя пользователя (если есть)
-        if (group.userName) {
-            infoParts.push(`[${group.userName}]`);
-        }
-        
-        // Дата и время
-        infoParts.push(`${dateStr} ${timeStr}`);
-        
-        // Количество слотов
-        infoParts.push(`(${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`);
-        
-        return `${index + 1}. ${infoParts.join(' - ')}`;
-    }).join('\n');
+    let options = [];
+    let currentChatIndex = 0;
+    let otherChatsIndex = 0;
     
-    const choice = prompt(`Выберите сохранение для загрузки:\n\n${options}\n\nВведите номер (1-${groupKeys.length}):`);
-    
-    if (!choice || isNaN(choice)) {
-        return;
-    }
-    
-    const index = parseInt(choice, 10) - 1;
-    if (index < 0 || index >= groupKeys.length) {
-        showToast('error', 'Неверный номер');
-        return;
-    }
-    
-    const selectedGroup = groups[groupKeys[index]];
-    
-    // Парсим slotId из имён файлов
-    const filesToLoad = [];
-    for (const filename of selectedGroup.files) {
-        const parsed = parseSaveFilename(filename);
-        if (parsed) {
-            filesToLoad.push({
-                filename: filename,
-                slotId: parsed.slotId
-            });
-        } else {
-            console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
-        }
-    }
-    
-    if (filesToLoad.length === 0) {
-        showToast('warning', 'Не найдено файлов для загрузки');
-        return;
-    }
-    
-    console.debug(`[KV Cache Manager] Начинаю загрузку ${filesToLoad.length} файлов:`, filesToLoad);
-    
-    let loadedCount = 0;
-    let errors = [];
-    
-    for (const { filename, slotId } of filesToLoad) {
-        try {
-            if (await loadSlotCache(slotId, filename)) {
-                loadedCount++;
-                console.debug(`[KV Cache Manager] Загружен кеш для слота ${slotId} из файла ${filename}`);
-            } else {
-                errors.push(`слот ${slotId}`);
+    // Сначала показываем файлы текущего чата (цифры)
+    if (currentChatGroups.length > 0) {
+        options.push('=== Текущий чат ===');
+        for (const group of currentChatGroups) {
+            const dateTime = formatTimestampToDate(group.timestamp);
+            const slotsCount = group.files.length;
+            
+            let infoParts = [];
+            if (group.userName) {
+                infoParts.push(`[${group.userName}]`);
             }
-        } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при загрузке слота ${slotId}:`, e);
-            errors.push(`слот ${slotId}: ${e.message}`);
+            infoParts.push(dateTime);
+            infoParts.push(`(${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})`);
+            
+            options.push(`${currentChatIndex + 1}. ${infoParts.join(' - ')}`);
+            currentChatIndex++;
         }
     }
     
-    if (loadedCount > 0) {
-        if (errors.length > 0) {
-            showToast('warning', `Загружено ${loadedCount} из ${filesToLoad.length} слотов. Ошибки: ${errors.join(', ')}`);
-        } else {
-            showToast('success', `Загружено ${loadedCount} слотов`);
+    // Затем показываем другие чаты (буквы)
+    if (otherChats.length > 0) {
+        if (currentChatGroups.length > 0) {
+            options.push('');
         }
-        // Обновляем список слотов после загрузки
-        setTimeout(() => updateSlotsList(), 1000);
-    } else {
-        showToast('error', `Не удалось загрузить кеш. Ошибки: ${errors.join(', ')}`);
+        options.push('=== Другие чаты ===');
+        for (const chatId of otherChats) {
+            const chatGroups = chats[chatId];
+            const latestGroup = chatGroups[0]; // Самый свежий файл в чате
+            const dateTime = formatTimestampToDate(latestGroup.timestamp);
+            const totalFiles = chatGroups.reduce((sum, g) => sum + g.files.length, 0);
+            
+            options.push(`${String.fromCharCode(65 + otherChatsIndex)}. Chat: ${chatId} - ${dateTime} (${totalFiles} файл${totalFiles !== 1 ? 'ов' : ''})`);
+            otherChatsIndex++;
+        }
     }
+    
+    if (options.length === 0) {
+        showToast('warning', 'Не найдено сохранений для загрузки');
+        return;
+    }
+    
+    const promptText = `Выберите сохранение для загрузки:\n\n${options.join('\n')}\n\nВведите номер (1-${currentChatIndex}) для текущего чата или букву (${otherChats.length > 0 ? 'A-' + String.fromCharCode(64 + otherChats.length) : 'нет'}) для другого чата:`;
+    const choice = prompt(promptText);
+    
+    if (!choice) {
+        return;
+    }
+    
+    const choiceUpper = choice.trim().toUpperCase();
+    
+    // Проверяем, выбрана ли буква (другой чат)
+    if (choiceUpper.length === 1 && choiceUpper >= 'A' && choiceUpper <= 'Z') {
+        const chatIndex = choiceUpper.charCodeAt(0) - 65;
+        if (chatIndex >= 0 && chatIndex < otherChats.length) {
+            const selectedChatId = otherChats[chatIndex];
+            // Рекурсивно открываем модалку для выбранного чата
+            await showLoadModalForChat(selectedChatId);
+            return;
+        }
+    }
+    
+    // Проверяем, выбрана ли цифра (файл текущего чата)
+    if (!isNaN(choice)) {
+        const index = parseInt(choice, 10) - 1;
+        if (index >= 0 && index < currentChatGroups.length) {
+            const selectedGroup = currentChatGroups[index];
+            
+            // Парсим slotId из имён файлов
+            const filesToLoad = [];
+            for (const filename of selectedGroup.files) {
+                const parsed = parseSaveFilename(filename);
+                if (parsed) {
+                    filesToLoad.push({
+                        filename: filename,
+                        slotId: parsed.slotId
+                    });
+                } else {
+                    console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
+                }
+            }
+            
+            if (filesToLoad.length === 0) {
+                showToast('warning', 'Не найдено файлов для загрузки');
+                return;
+            }
+            
+            console.debug(`[KV Cache Manager] Начинаю загрузку ${filesToLoad.length} файлов:`, filesToLoad);
+            
+            let loadedCount = 0;
+            let errors = [];
+            
+            for (const { filename, slotId } of filesToLoad) {
+                try {
+                    if (await loadSlotCache(slotId, filename)) {
+                        loadedCount++;
+                        console.debug(`[KV Cache Manager] Загружен кеш для слота ${slotId} из файла ${filename}`);
+                    } else {
+                        errors.push(`слот ${slotId}`);
+                    }
+                } catch (e) {
+                    console.error(`[KV Cache Manager] Ошибка при загрузке слота ${slotId}:`, e);
+                    errors.push(`слот ${slotId}: ${e.message}`);
+                }
+            }
+            
+            if (loadedCount > 0) {
+                if (errors.length > 0) {
+                    showToast('warning', `Загружено ${loadedCount} из ${filesToLoad.length} слотов. Ошибки: ${errors.join(', ')}`);
+                } else {
+                    showToast('success', `Загружено ${loadedCount} слотов`);
+                }
+                // Обновляем список слотов после загрузки
+                setTimeout(() => updateSlotsList(), 1000);
+            } else {
+                showToast('error', `Не удалось загрузить кеш. Ошибки: ${errors.join(', ')}`);
+            }
+            return;
+        }
+    }
+    
+    showToast('error', 'Неверный выбор');
+}
+
+async function onLoadButtonClick() {
+    await showLoadModalForChat();
 }
 
 // Функция вызывается при загрузке расширения
