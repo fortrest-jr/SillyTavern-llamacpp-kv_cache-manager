@@ -422,19 +422,24 @@ function groupSavesByChatAndTimestamp(saves) {
     return groups;
 }
 
-// Обработчики для кнопок
-async function onSaveButtonClick() {
-    const userName = prompt('Введите имя для сохранения:');
-    if (!userName || !userName.trim()) {
-        if (userName !== null) {
-            // Пользователь нажал OK, но не ввел имя
-            showToast('error', 'Имя не может быть пустым');
+// Общая функция сохранения кеша
+async function saveCache(requestUserName = false) {
+    let userName = null;
+    
+    // Запрашиваем имя пользователя, если нужно
+    if (requestUserName) {
+        userName = prompt('Введите имя для сохранения:');
+        if (!userName || !userName.trim()) {
+            if (userName !== null) {
+                // Пользователь нажал OK, но не ввел имя
+                showToast('error', 'Имя не может быть пустым');
+            }
+            return;
         }
-        return;
+        userName = userName.trim();
     }
     
     showToast('info', 'Начинаю сохранение кеша...');
-    
     
     // Получаем все валидные слоты
     const slots = await getActiveSlots();
@@ -445,7 +450,7 @@ async function onSaveButtonClick() {
     }
     
     showToast('info', `Найдено ${slots.length} активных слотов`);
-    console.debug(`[KV Cache Manager] Начинаю сохранение ${slots.length} слотов с именем "${userName}":`, slots);
+    console.debug(`[KV Cache Manager] Начинаю сохранение ${slots.length} слотов:`, slots);
     
     let savedCount = 0;
     let errors = [];
@@ -455,7 +460,9 @@ async function onSaveButtonClick() {
     
     for (const slotId of slots) {
         try {
-            const filename = generateManualSaveFilename(userName.trim(), slotId);
+            const filename = userName 
+                ? generateManualSaveFilename(userName, slotId)
+                : generateAutoSaveFilename(slotId);
             console.debug(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
             if (await saveSlotCache(slotId, filename)) {
                 savedCount++;
@@ -472,18 +479,28 @@ async function onSaveButtonClick() {
     
     if (savedCount > 0) {
         // Добавляем сохранение в список
-        addSaveToList(timestamp, chatName, userName.trim(), savedFiles);
+        addSaveToList(timestamp, chatName, userName, savedFiles);
         
+        // Формируем сообщение об успехе
         if (errors.length > 0) {
-            showToast('warning', `Сохранено ${savedCount} из ${slots.length} слотов с именем "${userName}". Ошибки: ${errors.join(', ')}`);
+            showToast('warning', `Сохранено ${savedCount} из ${slots.length} слотов. Ошибки: ${errors.join(', ')}`);
         } else {
-            showToast('success', `Сохранено ${savedCount} из ${slots.length} слотов с именем "${userName}"`);
+            showToast('success', `Сохранено ${savedCount} из ${slots.length} слотов`);
         }
         // Обновляем список слотов после сохранения
         setTimeout(() => updateSlotsList(), 1000);
     } else {
         showToast('error', `Не удалось сохранить кеш. Ошибки: ${errors.join(', ')}`);
     }
+}
+
+// Обработчики для кнопок
+async function onSaveButtonClick() {
+    await saveCache(true); // Запрашиваем имя пользователя
+}
+
+async function onSaveNowButtonClick() {
+    await saveCache(false); // Не запрашиваем имя пользователя
 }
 
 async function onLoadButtonClick() {
@@ -588,59 +605,6 @@ async function onLoadButtonClick() {
     }
 }
 
-async function onSaveNowButtonClick() {
-    showToast('info', 'Начинаю сохранение кеша...');
-    
-    // Получаем все валидные слоты
-    const slots = await getActiveSlots();
-    
-    if (slots.length === 0) {
-        showToast('warning', 'Нет активных слотов с валидным кешем для сохранения');
-        return;
-    }
-    
-    showToast('info', `Найдено ${slots.length} активных слотов`);
-    console.debug(`[KV Cache Manager] Начинаю сохранение ${slots.length} слотов:`, slots);
-    
-    let savedCount = 0;
-    let errors = [];
-    const timestamp = formatTimestamp();
-    const chatName = getCurrentChatName();
-    const savedFiles = [];
-    
-    for (const slotId of slots) {
-        try {
-            const filename = generateAutoSaveFilename(slotId);
-            console.debug(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
-            if (await saveSlotCache(slotId, filename)) {
-                savedCount++;
-                savedFiles.push({ filename: filename, slotId: slotId });
-                console.debug(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
-            } else {
-                errors.push(`слот ${slotId}`);
-            }
-        } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotId}:`, e);
-            errors.push(`слот ${slotId}: ${e.message}`);
-        }
-    }
-    
-    if (savedCount > 0) {
-        // Добавляем сохранение в список (без имени пользователя для автосохранений)
-        addSaveToList(timestamp, chatName, null, savedFiles);
-        
-        if (errors.length > 0) {
-            showToast('warning', `Сохранено ${savedCount} из ${slots.length} слотов. Ошибки: ${errors.join(', ')}`);
-        } else {
-            showToast('success', `Сохранено ${savedCount} слотов`);
-        }
-        // Обновляем список слотов после сохранения
-        setTimeout(() => updateSlotsList(), 1000);
-    } else {
-        showToast('error', `Не удалось сохранить кеш. Ошибки: ${errors.join(', ')}`);
-    }
-}
-
 // Функция вызывается при загрузке расширения
 jQuery(async () => {
     // Загружаем HTML из файла
@@ -669,9 +633,4 @@ jQuery(async () => {
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
     $("#kv-cache-save-now-button").on("click", onSaveNowButtonClick);
-    
-    // Обновляем список слотов при сохранении
-    $("#kv-cache-save-button, #kv-cache-save-now-button").on("click", () => {
-        setTimeout(() => updateSlotsList(), 1000);
-    });
 });
