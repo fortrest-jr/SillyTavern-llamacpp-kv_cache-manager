@@ -24,7 +24,8 @@ const defaultSettings = {
 
 const extensionSettings = extension_settings[extensionName] ||= {};
 
-// Счетчик сообщений для каждого чата (для автосохранения)
+// Счетчик сообщений для каждого персонажа в каждом чате (для автосохранения)
+// Структура: { [chatId]: { [characterName]: count } }
 const messageCounters = {};
 
 // ID последнего чата, для которого была выполнена автозагрузка
@@ -35,6 +36,7 @@ let lastLoadedChatId = null;
 let currentSlot = null;
 
 // Обновление индикатора следующего сохранения
+// Показывает минимальное оставшееся количество сообщений среди всех персонажей
 function updateNextSaveIndicator() {
     const indicator = $("#kv-cache-next-save");
     const headerTitle = $(".kv-cache-manager-settings .inline-drawer-toggle.inline-drawer-header b");
@@ -54,54 +56,133 @@ function updateNextSaveIndicator() {
     }
     
     const chatId = getNormalizedChatId();
-    const currentCount = messageCounters[chatId] || 0;
+    const chatCounters = messageCounters[chatId] || {};
     const interval = extensionSettings.saveInterval;
-    const remaining = Math.max(0, interval - currentCount);
+    
+    // Находим минимальное оставшееся количество сообщений среди всех персонажей
+    let minRemaining = Infinity;
+    let hasCounters = false;
+    
+    for (const characterName in chatCounters) {
+        hasCounters = true;
+        const count = chatCounters[characterName] || 0;
+        const remaining = Math.max(0, interval - count);
+        if (remaining < minRemaining) {
+            minRemaining = remaining;
+        }
+    }
+    
+    // Если нет счетчиков, показываем полный интервал
+    if (!hasCounters) {
+        minRemaining = interval;
+    }
     
     // Обновляем индикатор в настройках
     if (indicator.length > 0) {
-        if (remaining === 0) {
+        if (minRemaining === 0) {
             indicator.text("Следующее сохранение при следующем сообщении");
         } else {
-            const messageWord = remaining === 1 ? 'сообщение' : remaining < 5 ? 'сообщения' : 'сообщений';
-            indicator.text(`Следующее сохранение через: ${remaining} ${messageWord}`);
+            const messageWord = minRemaining === 1 ? 'сообщение' : minRemaining < 5 ? 'сообщения' : 'сообщений';
+            indicator.text(`Следующее сохранение через: ${minRemaining} ${messageWord}`);
         }
     }
     
     // Обновляем заголовок расширения с числом в квадратных скобках
     if (headerTitle.length > 0) {
-        headerTitle.text(`[${remaining}] KV Cache Manager`);
+        headerTitle.text(`[${minRemaining}] KV Cache Manager`);
     }
 }
 
-// Увеличение счетчика сообщений для текущего чата
-function incrementMessageCounter() {
+// Сохранение кеша для конкретного персонажа
+async function saveCharacterCache(characterName, slotIndex) {
+    if (!characterName || slotIndex === null || slotIndex === undefined) {
+        return false;
+    }
+    
+    const chatId = getNormalizedChatId();
+    const timestamp = formatTimestamp();
+    const filename = generateSaveFilename(chatId, timestamp, characterName);
+    
+    console.debug(`[KV Cache Manager] Сохранение кеша для персонажа ${characterName} в слот ${slotIndex}`);
+    
+    const success = await saveSlotCache(slotIndex, filename);
+    
+    if (success) {
+        // Выполняем ротацию файлов для этого персонажа
+        await rotateCharacterFiles(characterName);
+        console.debug(`[KV Cache Manager] Кеш успешно сохранен для персонажа ${characterName}`);
+    }
+    
+    return success;
+}
+
+// Увеличение счетчика сообщений для конкретного персонажа
+function incrementMessageCounter(characterName) {
     if (!extensionSettings.enabled) {
+        return;
+    }
+    
+    if (!characterName) {
+        // Если имя персонажа не указано, пропускаем
         return;
     }
     
     const chatId = getNormalizedChatId();
     if (!messageCounters[chatId]) {
-        messageCounters[chatId] = 0;
+        messageCounters[chatId] = {};
     }
-    messageCounters[chatId]++;
+    
+    if (!messageCounters[chatId][characterName]) {
+        messageCounters[chatId][characterName] = 0;
+    }
+    
+    messageCounters[chatId][characterName]++;
     
     updateNextSaveIndicator();
     
-    // Проверяем, нужно ли сохранить
+    // Проверяем, нужно ли сохранить для этого персонажа
     const interval = extensionSettings.saveInterval;
-    if (messageCounters[chatId] >= interval) {
-        // Запускаем автосохранение (используем существующую функцию saveCache)
-        // Счетчик будет сброшен только после успешного сохранения
-        saveCache(false).then((success) => {
-            if (success) {
-                // Сбрасываем счетчик только после успешного сохранения
-                messageCounters[chatId] = 0;
-                updateNextSaveIndicator();
+    if (messageCounters[chatId][characterName] >= interval) {
+        // Находим слот, в котором находится персонаж
+        let slotIndex = null;
+        if (extensionSettings.groupChatMode && extensionSettings.slots) {
+            slotIndex = extensionSettings.slots.findIndex(name => name === characterName);
+            if (slotIndex === -1) {
+                slotIndex = null;
             }
-        }).catch(() => {
-            // При ошибке не сбрасываем счетчик, чтобы попробовать сохранить снова
-        });
+        } else {
+            // В обычном режиме используем первый активный слот
+            // Это временное решение, пока не реализовано распределение слотов
+            getActiveSlots().then((activeSlots) => {
+                if (activeSlots.length > 0) {
+                    const slotIdx = activeSlots[0];
+                    saveCharacterCache(characterName, slotIdx).then((success) => {
+                        if (success) {
+                            messageCounters[chatId][characterName] = 0;
+                            updateNextSaveIndicator();
+                        }
+                    }).catch(() => {});
+                } else {
+                    console.warn(`[KV Cache Manager] Не удалось найти слот для сохранения персонажа ${characterName}`);
+                }
+            }).catch(() => {});
+            return; // Выходим, так как сохранение будет выполнено асинхронно
+        }
+        
+        if (slotIndex !== null) {
+            // Запускаем автосохранение для этого персонажа
+            saveCharacterCache(characterName, slotIndex).then((success) => {
+                if (success) {
+                    // Сбрасываем счетчик только после успешного сохранения
+                    messageCounters[chatId][characterName] = 0;
+                    updateNextSaveIndicator();
+                }
+            }).catch(() => {
+                // При ошибке не сбрасываем счетчик, чтобы попробовать сохранить снова
+            });
+        } else {
+            console.warn(`[KV Cache Manager] Не удалось найти слот для сохранения персонажа ${characterName}`);
+        }
     }
 }
 
@@ -215,8 +296,10 @@ function onGroupChatModeChange(event) {
     extensionSettings.groupChatMode = value;
     saveSettingsDebounced();
     if (value) {
-        // Инициализируем слоты при включении режима
-        initializeSlots();
+        // Инициализируем слоты и распределяем персонажей при включении режима
+        initializeSlots().then(() => {
+            assignCharactersToSlots();
+        });
     }
 }
 
@@ -259,54 +342,131 @@ function getNormalizedChatId() {
     return normalizeChatId(getCurrentChatId());
 }
 
-// Генерация имени файла в едином формате
-// Формат: {chatId}_{timestamp}_{named_}{userName}_slot{slotId}.bin
-// Если userName указан, добавляется префикс "named_"
-function generateSaveFilename(chatId, timestamp, slotId, userName = null) {
-    const safeChatId = normalizeChatId(chatId);
-    const safeSlotId = String(slotId);
-    const safeUserFiller = userName ? `_named_${userName.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+// Получение списка персонажей текущего группового чата
+// Пытается определить персонажей из истории сообщений чата или использует глобальный массив characters
+async function getChatCharacters() {
+    const characterNames = new Set();
+    
+    try {
+        // Пытаемся получить контекст чата
+        const context = getContext();
+        
+        if (context && context.chat) {
+            // Извлекаем имена персонажей из сообщений чата
+            const messages = context.chat || [];
+            
+            for (const message of messages) {
+                if (message && message.name) {
+                    // Пропускаем системные сообщения и сообщения пользователя
+                    if (message.name !== 'You' && message.name !== 'System' && message.name.trim()) {
+                        characterNames.add(message.name);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.debug('[KV Cache Manager] Не удалось получить персонажей из контекста чата:', e);
+    }
+    
+    // Если не нашли персонажей в истории, используем глобальный массив characters
+    if (characterNames.size === 0 && characters && Array.isArray(characters)) {
+        for (const character of characters) {
+            if (character && character.name) {
+                characterNames.add(character.name);
+            }
+        }
+    }
+    
+    const result = Array.from(characterNames);
+    console.debug(`[KV Cache Manager] Найдено ${result.length} персонажей в текущем чате:`, result);
+    
+    return result;
+}
 
-    return `${safeChatId}_${timestamp}${safeUserFiller}_slot${safeSlotId}.bin`;
+// Генерация имени файла в едином формате
+// Форматы:
+// - Автосохранение: {chatId}_{timestamp}_character_{characterName}.bin
+// - С тегом: {chatId}_{timestamp}_tag_{tag}_character_{characterName}.bin
+// @param {string} chatId - ID чата
+// @param {string} timestamp - временная метка
+// @param {string} characterName - имя персонажа (обязательно)
+// @param {string} tag - тег для ручного сохранения (опционально)
+function generateSaveFilename(chatId, timestamp, characterName, tag = null) {
+    const safeChatId = normalizeChatId(chatId);
+    const safeCharacterName = characterName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    
+    // Ручное сохранение с тегом
+    if (tag) {
+        const safeTag = tag.replace(/[^a-zA-Z0-9_-]/g, '_');
+        return `${safeChatId}_${timestamp}_tag_${safeTag}_character_${safeCharacterName}.bin`;
+    }
+    
+    // Автосохранение (без тега)
+    return `${safeChatId}_${timestamp}_character_${safeCharacterName}.bin`;
 }
 
 // Парсинг имени файла для извлечения данных
-// Возвращает { chatId, timestamp, userName, slotId } или null при ошибке
+// Поддерживает форматы:
+// - Автосохранение: {chatId}_{timestamp}_character_{characterName}.bin
+// - С тегом: {chatId}_{timestamp}_tag_{tag}_character_{characterName}.bin
+// Также поддерживает старый формат для обратной совместимости:
+// - {chatId}_{timestamp}_tag_{tag}_slot{slotId}.bin
+// - {chatId}_{timestamp}_slot{slotId}.bin
+// Возвращает { chatId, timestamp, tag, slotId, characterName } или null при ошибке
 function parseSaveFilename(filename) {
     // Убираем расширение .bin
     const nameWithoutExt = filename.replace(/\.bin$/, '');
     
-    // Парсим с конца: ищем _slot{число}
-    const slotMatch = nameWithoutExt.match(/_slot(\d+)$/);
-    if (!slotMatch) {
-        return null;
-    }
+    let tag = null;
+    let slotId = null;
+    let characterName = null;
+    let beforeSuffix = nameWithoutExt;
     
-    const slotId = parseInt(slotMatch[1], 10);
-    let beforeSlot = nameWithoutExt.slice(0, -slotMatch[0].length);
-    
-    // Проверяем наличие _named_{userName} перед _slot
-    let userName = null;
-    const namedMatch = beforeSlot.match(/_named_(.+)$/);
-    if (namedMatch) {
-        userName = namedMatch[1];
-        beforeSlot = beforeSlot.slice(0, -namedMatch[0].length);
+    // Проверяем новый формат: _character_{characterName} (всегда в конце)
+    const characterMatch = nameWithoutExt.match(/_character_(.+)$/);
+    if (characterMatch) {
+        characterName = characterMatch[1];
+        beforeSuffix = nameWithoutExt.slice(0, -characterMatch[0].length);
+        
+        // Проверяем наличие _tag_{tag} перед _character
+        const tagMatch = beforeSuffix.match(/_tag_(.+)$/);
+        if (tagMatch) {
+            tag = tagMatch[1];
+            beforeSuffix = beforeSuffix.slice(0, -tagMatch[0].length);
+        }
+    } else {
+        // Старый формат для обратной совместимости: _slot{число}
+        const slotMatch = nameWithoutExt.match(/_slot(\d+)$/);
+        if (!slotMatch) {
+            return null;
+        }
+        
+        slotId = parseInt(slotMatch[1], 10);
+        beforeSuffix = nameWithoutExt.slice(0, -slotMatch[0].length);
+        
+        // Проверяем наличие _tag_{tag} перед _slot
+        const tagMatch = beforeSuffix.match(/_tag_(.+)$/);
+        if (tagMatch) {
+            tag = tagMatch[1];
+            beforeSuffix = beforeSuffix.slice(0, -tagMatch[0].length);
+        }
     }
     
     // Ищем timestamp (14 цифр) с конца
-    const timestampMatch = beforeSlot.match(/_(\d{14})$/);
+    const timestampMatch = beforeSuffix.match(/_(\d{14})$/);
     if (!timestampMatch) {
         return null;
     }
     
     const timestamp = timestampMatch[1];
-    const chatId = beforeSlot.slice(0, -timestampMatch[0].length);
+    const chatId = beforeSuffix.slice(0, -timestampMatch[0].length);
     
     return {
         chatId: chatId,
         timestamp: timestamp,
-        userName: userName,
-        slotId: slotId
+        tag: tag,
+        slotId: slotId,
+        characterName: characterName
     };
 }
 
@@ -425,6 +585,114 @@ async function initializeSlots(totalSlots = null) {
     updateSlotsAvailability();
 }
 
+// Распределение персонажей по слотам из текущего чата
+// Очищает старых персонажей из других чатов
+async function assignCharactersToSlots() {
+    if (!extensionSettings.groupChatMode) {
+        return;
+    }
+    
+    // Получаем персонажей текущего чата
+    const chatCharacters = await getChatCharacters();
+    const chatCharactersSet = new Set(chatCharacters);
+    
+    // Инициализируем слоты, если еще не инициализированы
+    if (!extensionSettings.slots || extensionSettings.slots.length === 0) {
+        await initializeSlots();
+    }
+    
+    const totalSlots = extensionSettings.slots.length;
+    
+    // Сначала сохраняем и очищаем слоты со старыми персонажами (не из текущего чата)
+    for (let i = 0; i < totalSlots; i++) {
+        const currentCharacter = extensionSettings.slots[i];
+        if (currentCharacter && typeof currentCharacter === 'string' && !chatCharactersSet.has(currentCharacter)) {
+            // Персонаж из другого чата - сохраняем его кеш перед очисткой
+            const chatId = getNormalizedChatId();
+            const timestamp = formatTimestamp();
+            const filename = generateSaveFilename(chatId, timestamp, currentCharacter);
+            
+            // Сохраняем асинхронно, не блокируя выполнение
+            saveSlotCache(i, filename).then((success) => {
+                if (success) {
+                    console.debug(`[KV Cache Manager] Сохранен кеш персонажа ${currentCharacter} из другого чата перед очисткой слота`);
+                    rotateCharacterFiles(currentCharacter).catch(() => {});
+                }
+            }).catch((e) => {
+                console.error(`[KV Cache Manager] Ошибка при сохранении кеша персонажа ${currentCharacter}:`, e);
+            });
+            
+            // Очищаем слот
+            extensionSettings.slots[i] = undefined;
+            extensionSettings.slotsUsage[i] = 0;
+        }
+    }
+    
+    if (chatCharacters.length === 0) {
+        console.debug('[KV Cache Manager] Не найдено персонажей в текущем чате для распределения по слотам');
+        saveSettingsDebounced();
+        updateSlotsAvailability();
+        return;
+    }
+    
+    console.debug(`[KV Cache Manager] Распределение ${chatCharacters.length} персонажей по ${totalSlots} слотам`);
+    
+    // Если слотов достаточно для всех персонажей - фиксированное присвоение по порядку
+    if (totalSlots >= chatCharacters.length) {
+        // Очищаем оставшиеся слоты (на случай если были свободные)
+        for (let i = 0; i < totalSlots; i++) {
+            if (!chatCharactersSet.has(extensionSettings.slots[i])) {
+                extensionSettings.slots[i] = undefined;
+                extensionSettings.slotsUsage[i] = 0;
+            }
+        }
+        
+        // Присваиваем каждого персонажа к слоту по порядку
+        chatCharacters.forEach((characterName, index) => {
+            extensionSettings.slots[index] = characterName;
+            extensionSettings.slotsUsage[index] = 0; // Начальный счетчик использования
+        });
+        
+        console.debug(`[KV Cache Manager] Персонажи распределены по слотам (фиксированное присвоение):`, extensionSettings.slots);
+    } else {
+        // Слотов не хватает - используем циркуляцию с приоритетом по частоте использования
+        // Сначала присваиваем персонажей, которые уже в слотах (сохраняем их позиции)
+        const existingAssignments = new Map();
+        
+        chatCharacters.forEach((characterName) => {
+            const existingIndex = extensionSettings.slots.findIndex(name => name === characterName);
+            if (existingIndex !== -1) {
+                existingAssignments.set(characterName, existingIndex);
+            }
+        });
+        
+        // Очищаем слоты, которые не заняты персонажами текущего чата
+        for (let i = 0; i < totalSlots; i++) {
+            const currentCharacter = extensionSettings.slots[i];
+            if (currentCharacter && !existingAssignments.has(currentCharacter)) {
+                extensionSettings.slots[i] = undefined;
+                extensionSettings.slotsUsage[i] = 0;
+            }
+        }
+        
+        // Присваиваем оставшихся персонажей к свободным слотам или вытесняем по приоритету
+        for (const characterName of chatCharacters) {
+            if (!existingAssignments.has(characterName)) {
+                // Используем acquireSlot для получения слота (он сам решит, вытеснять или использовать свободный)
+                acquireSlot(characterName);
+            }
+        }
+        
+        console.debug(`[KV Cache Manager] Персонажи распределены по слотам (циркуляция):`, extensionSettings.slots);
+    }
+    
+    // Сохраняем настройки
+    saveSettingsDebounced();
+    
+    // Обновляем UI
+    updateSlotsAvailability();
+}
+
 // Получение слота для персонажа (по частоте использования)
 function acquireSlot(characterName) {
     if (!extensionSettings.groupChatMode) {
@@ -468,6 +736,24 @@ function acquireSlot(characterName) {
     if (minUsageIndex !== -1) {
         const evictedCharacter = extensionSettings.slots[minUsageIndex];
         console.debug(`[KV Cache Manager] Вытесняем персонажа ${evictedCharacter} из слота ${minUsageIndex} (использование: ${minUsage}) для ${characterName}`);
+        
+        // Сохраняем кеш вытесняемого персонажа перед освобождением слота
+        if (evictedCharacter && typeof evictedCharacter === 'string') {
+            const chatId = getNormalizedChatId();
+            const timestamp = formatTimestamp();
+            const filename = generateSaveFilename(chatId, timestamp, evictedCharacter);
+            
+            // Сохраняем асинхронно, не блокируя выполнение
+            saveSlotCache(minUsageIndex, filename).then((success) => {
+                if (success) {
+                    console.debug(`[KV Cache Manager] Сохранен кеш вытесняемого персонажа ${evictedCharacter} в файл ${filename}`);
+                    // Выполняем ротацию файлов для вытесняемого персонажа
+                    rotateCharacterFiles(evictedCharacter).catch(() => {});
+                }
+            }).catch((e) => {
+                console.error(`[KV Cache Manager] Ошибка при сохранении кеша вытесняемого персонажа ${evictedCharacter}:`, e);
+            });
+        }
         
         extensionSettings.slots[minUsageIndex] = characterName;
         extensionSettings.slotsUsage[minUsageIndex] = 1;
@@ -517,30 +803,7 @@ function releaseAllSlots() {
 }
 
 // Обновление UI с информацией о слотах
-function updateSlotsAvailability() {
-    const indicator = $("#kv-cache-group-chat-slots-info");
-    if (indicator.length === 0) {
-        return;
-    }
-    
-    if (!extensionSettings.groupChatMode) {
-        indicator.text("Режим отключен");
-        return;
-    }
-    
-    const slots = extensionSettings.slots || [];
-    const usedSlots = slots.filter(name => typeof name === "string").length;
-    const totalSlots = slots.length;
-    const availableSlots = totalSlots - usedSlots;
-    
-    if (totalSlots === 0) {
-        indicator.text("Слоты не инициализированы");
-    } else {
-        indicator.text(`Занято: ${usedSlots} / ${totalSlots} (свободно: ${availableSlots})`);
-    }
-}
-
-// Обновление списка слотов в UI
+// Обновление списка слотов в UI (объединенный виджет)
 async function updateSlotsList() {
     const slotsListElement = $("#kv-cache-slots-list");
     if (slotsListElement.length === 0) {
@@ -552,28 +815,69 @@ async function updateSlotsList() {
         const slotsData = await getAllSlotsInfo();
         const totalSlots = slotsData ? getSlotsCountFromData(slotsData) : 0;
         
-        // Получаем валидные слоты
-        const validSlots = await getActiveSlots();
-        
-        if (validSlots.length === 0) {
-            slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Нет активных слотов с валидным кешем</p>');
-            return;
+        if (extensionSettings.groupChatMode && extensionSettings.slots && extensionSettings.slots.length > 0) {
+            // Режим групповых чатов: показываем детальную информацию о слотах
+            const slots = extensionSettings.slots;
+            const slotsUsage = extensionSettings.slotsUsage || [];
+            
+            let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
+            let usedCount = 0;
+            
+            for (let i = 0; i < slots.length; i++) {
+                const characterName = slots[i];
+                const usage = slotsUsage[i] || 0;
+                const isUsed = characterName && typeof characterName === 'string';
+                
+                if (isUsed) {
+                    usedCount++;
+                }
+                
+                html += `<li style="margin: 3px 0;">`;
+                html += `Слот <strong>${i}</strong>: `;
+                
+                if (isUsed) {
+                    html += `<span style="color: var(--SmartThemeBodyColor, inherit);">${characterName}</span> `;
+                    html += `<span style="font-size: 0.85em; color: var(--SmartThemeBodyColor, #888);">[использовано: ${usage}]</span>`;
+                } else {
+                    html += `<span style="color: #888; font-style: italic;">(свободен)</span>`;
+                }
+                
+                html += `</li>`;
+            }
+            
+            html += '</ul>';
+            html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Занято: ${usedCount} / ${totalSlots} (свободно: ${totalSlots - usedCount})</p>`;
+            
+            slotsListElement.html(html);
+        } else {
+            // Обычный режим: показываем только активные слоты
+            const validSlots = await getActiveSlots();
+            
+            if (validSlots.length === 0) {
+                slotsListElement.html('<p style="color: var(--SmartThemeBodyColor, inherit);">Нет активных слотов с валидным кешем</p>');
+                return;
+            }
+            
+            let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
+            for (const slotId of validSlots) {
+                html += `<li style="margin: 3px 0;">Слот <strong>${slotId}</strong></li>`;
+            }
+            html += '</ul>';
+            html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Всего: ${validSlots.length} слот(ов) из ${totalSlots}</p>`;
+            
+            slotsListElement.html(html);
         }
-        
-        // Показываем список слотов
-        let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
-        for (const slotId of validSlots) {
-            html += `<li style="margin: 3px 0;">Слот <strong>${slotId}</strong></li>`;
-        }
-        html += '</ul>';
-        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Всего: ${validSlots.length} слот(ов) из ${totalSlots}</p>`;
-        
-        slotsListElement.html(html);
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка при обновлении списка слотов:', e);
         const errorMessage = e.message || 'Неизвестная ошибка';
         slotsListElement.html(`<p style="color: var(--SmartThemeBodyColor, inherit);">Ошибка загрузки слотов: ${errorMessage}</p>`);
     }
+}
+
+// Обновление статуса слотов (для обратной совместимости, теперь вызывает updateSlotsList)
+function updateSlotsAvailability() {
+    // Обновляем объединенный список слотов
+    updateSlotsList();
 }
 
 // Сохранение кеша для слота
@@ -803,7 +1107,7 @@ async function getFilesList() {
 }
 
 // Группировка файлов по чатам, внутри каждого чата - по timestamp
-// Возвращает объект: { [chatId]: [{ timestamp, userName, files }, ...] }
+// Возвращает объект: { [chatId]: [{ timestamp, tag, characterName, files }, ...] }
 function groupFilesByChat(files) {
     const chats = {};
     
@@ -828,7 +1132,8 @@ function groupFilesByChat(files) {
             group = {
                 chatId: chatId,
                 timestamp: parsed.timestamp,
-                userName: parsed.userName || null,
+                tag: parsed.tag || null,
+                characterName: parsed.characterName || null,
                 files: []
             };
             chats[chatId].push(group);
@@ -854,20 +1159,21 @@ function groupFilesByChat(files) {
 }
 
 // Общая функция сохранения кеша
-async function saveCache(requestUserName = false) {
-    let userName = null;
+// Сохраняет всех персонажей, которые находятся в слотах
+async function saveCache(requestTag = false) {
+    let tag = null;
     
-    // Запрашиваем имя пользователя, если нужно
-    if (requestUserName) {
-        userName = prompt('Введите имя для сохранения:');
-        if (!userName || !userName.trim()) {
-            if (userName !== null) {
-                // Пользователь нажал OK, но не ввел имя
-                showToast('error', 'Имя не может быть пустым');
+    // Запрашиваем тег, если нужно
+    if (requestTag) {
+        tag = prompt('Введите тег для сохранения:');
+        if (!tag || !tag.trim()) {
+            if (tag !== null) {
+                // Пользователь нажал OK, но не ввел тег
+                showToast('error', 'Тег не может быть пустым');
             }
             return false; // Отмена сохранения
         }
-        userName = userName.trim();
+        tag = tag.trim();
     }
     
     // Получаем нормализованный ID чата
@@ -875,62 +1181,96 @@ async function saveCache(requestUserName = false) {
     
     showToast('info', 'Начинаю сохранение кеша...');
     
-    // Получаем все валидные слоты
-    const slots = await getActiveSlots();
+    // Получаем персонажей из слотов (они уже должны быть только из текущего чата)
+    const charactersToSave = [];
     
-    if (slots.length === 0) {
-        showToast('warning', 'Нет активных слотов с валидным кешем для сохранения');
-        return false; // Нет слотов для сохранения
+    if (extensionSettings.groupChatMode && extensionSettings.slots) {
+        // В режиме групповых чатов используем информацию о персонажах в слотах
+        extensionSettings.slots.forEach((characterName, slotIndex) => {
+            if (characterName && typeof characterName === 'string') {
+                charactersToSave.push({
+                    characterName: characterName,
+                    slotIndex: slotIndex
+                });
+            }
+        });
+    } else {
+        // В обычном режиме получаем активные слоты
+        // Временное решение: используем первый активный слот для каждого персонажа
+        // TODO: Реализовать распределение персонажей по слотам
+        const activeSlots = await getActiveSlots();
+        if (activeSlots.length > 0) {
+            // В обычном режиме сохраняем только первый активный слот
+            // Персонаж будет определен позже при реализации распределения
+            charactersToSave.push({
+                characterName: null, // Будет определено позже
+                slotIndex: activeSlots[0]
+            });
+        }
     }
     
-    console.debug(`[KV Cache Manager] Начинаю сохранение ${slots.length} слотов:`, slots);
+    if (charactersToSave.length === 0) {
+        showToast('warning', 'Нет персонажей в слотах для сохранения');
+        return false;
+    }
     
-    // Генерируем timestamp один раз для всех слотов в этом сохранении
-    const timestamp = formatTimestamp();
+    console.debug(`[KV Cache Manager] Начинаю сохранение ${charactersToSave.length} персонажей:`, charactersToSave);
     
     let savedCount = 0;
     let errors = [];
     
-    for (const slotId of slots) {
+    // Сохраняем каждого персонажа с индивидуальным timestamp
+    for (const { characterName, slotIndex } of charactersToSave) {
+        if (!characterName) {
+            // Пропускаем, если имя персонажа не определено (временное решение для обычного режима)
+            continue;
+        }
+        
         try {
-            const filename = generateSaveFilename(chatId, timestamp, slotId, userName);
-            console.debug(`[KV Cache Manager] Сохранение слота ${slotId} с именем файла: ${filename}`);
-            if (await saveSlotCache(slotId, filename)) {
+            const timestamp = formatTimestamp();
+            const filename = generateSaveFilename(chatId, timestamp, characterName, tag);
+            
+            console.debug(`[KV Cache Manager] Сохранение персонажа ${characterName} в слот ${slotIndex} с именем файла: ${filename}`);
+            
+            if (await saveSlotCache(slotIndex, filename)) {
                 savedCount++;
-                console.debug(`[KV Cache Manager] Сохранен кеш для слота ${slotId}: ${filename}`);
+                console.debug(`[KV Cache Manager] Сохранен кеш для персонажа ${characterName}: ${filename}`);
+                
+                // Выполняем ротацию файлов для этого персонажа (только для автосохранений)
+                if (!tag) {
+                    await rotateCharacterFiles(characterName);
+                }
             } else {
-                errors.push(`слот ${slotId}`);
+                errors.push(characterName);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotId}:`, e);
-            errors.push(`слот ${slotId}: ${e.message}`);
+            console.error(`[KV Cache Manager] Ошибка при сохранении персонажа ${characterName}:`, e);
+            errors.push(`${characterName}: ${e.message}`);
         }
     }
     
     if (savedCount > 0) {
         // Формируем сообщение об успехе
         if (errors.length > 0) {
-            showToast('warning', `Сохранено ${savedCount} из ${slots.length} слотов. Ошибки: ${errors.join(', ')}`);
+            showToast('warning', `Сохранено ${savedCount} из ${charactersToSave.length} персонажей. Ошибки: ${errors.join(', ')}`);
         } else {
-            // Для автосохранений (без userName) показываем другое сообщение
-            if (!userName) {
-                showToast('success', `Автосохранено ${savedCount} слотов`, 'Автосохранение');
+            // Для автосохранений (без тега) показываем другое сообщение
+            if (!tag) {
+                showToast('success', `Автосохранено ${savedCount} персонажей`, 'Автосохранение');
             } else {
-                showToast('success', `Сохранено ${savedCount} из ${slots.length} слотов`);
+                showToast('success', `Сохранено ${savedCount} персонажей`);
             }
         }
         
-        // Для автосохранений (без userName) выполняем ротацию файлов
-        if (!userName) {
-            await rotateAutoSaveFiles();
-            // Обновляем индикатор после автосохранения
+        // Обновляем индикатор после автосохранения
+        if (!tag) {
             updateNextSaveIndicator();
         }
         
         // Обновляем список слотов после сохранения
         setTimeout(() => updateSlotsList(), 1000);
         
-        // Возвращаем true при успешном сохранении (хотя бы один слот сохранен)
+        // Возвращаем true при успешном сохранении (хотя бы один персонаж сохранен)
         return true;
     } else {
         showToast('error', `Не удалось сохранить кеш. Ошибки: ${errors.join(', ')}`);
@@ -1013,7 +1353,63 @@ async function deleteFile(filename) {
     }
 }
 
-// Ротация файлов: удаление старых автосохранений для текущего чата
+// Ротация файлов для конкретного персонажа
+async function rotateCharacterFiles(characterName) {
+    if (!characterName) {
+        return;
+    }
+    
+    const chatId = getNormalizedChatId();
+    const maxFiles = extensionSettings.maxFiles;
+    
+    try {
+        // Получаем список всех файлов
+        const filesList = await getFilesList();
+        
+        // Фильтруем только автосохранения для этого персонажа в текущем чате (без тега)
+        const characterFiles = filesList.filter(file => {
+            const parsed = parseSaveFilename(file.name);
+            return parsed && 
+                   parsed.chatId === chatId && 
+                   parsed.characterName === characterName &&
+                   !parsed.tag; // Только автосохранения (без тега)
+        });
+        
+        console.debug(`[KV Cache Manager] Найдено ${characterFiles.length} автосохранений для персонажа ${characterName} в чате ${chatId} (лимит: ${maxFiles})`);
+        
+        // Сортируем по timestamp (от новых к старым)
+        characterFiles.sort((a, b) => {
+            const parsedA = parseSaveFilename(a.name);
+            const parsedB = parseSaveFilename(b.name);
+            if (!parsedA || !parsedB) return 0;
+            return parsedB.timestamp.localeCompare(parsedA.timestamp);
+        });
+        
+        if (characterFiles.length > maxFiles) {
+            const filesToDelete = characterFiles.slice(maxFiles);
+            console.debug(`[KV Cache Manager] Удаление ${filesToDelete.length} старых автосохранений для персонажа ${characterName}`);
+            
+            let deletedCount = 0;
+            for (const file of filesToDelete) {
+                const deleted = await deleteFile(file.name);
+                if (deleted) {
+                    deletedCount++;
+                    console.debug(`[KV Cache Manager] Удален файл: ${file.name}`);
+                }
+            }
+            
+            if (deletedCount > 0 && extensionSettings.showNotifications) {
+                showToast('warning', `Удалено ${deletedCount} старых автосохранений для ${characterName}`, 'Ротация файлов');
+            }
+        } else {
+            console.debug(`[KV Cache Manager] Ротация не требуется для ${characterName}: ${characterFiles.length} файлов <= ${maxFiles}`);
+        }
+    } catch (e) {
+        console.error(`[KV Cache Manager] Ошибка при ротации файлов для персонажа ${characterName}:`, e);
+    }
+}
+
+// Ротация файлов: удаление старых автосохранений для текущего чата (старая функция, оставлена для обратной совместимости)
 async function rotateAutoSaveFiles() {
     const chatId = getNormalizedChatId();
     const maxFiles = extensionSettings.maxFiles;
@@ -1022,12 +1418,13 @@ async function rotateAutoSaveFiles() {
         // Получаем список всех файлов
         const filesList = await getFilesList();
         
-        // Фильтруем только автосохранения для текущего чата (без userName)
+        // Фильтруем только автосохранения для текущего чата (без тега и без имени персонажа)
         const autoSaveFiles = filesList.filter(file => {
             const parsed = parseSaveFilename(file.name);
             return parsed && 
                    parsed.chatId === chatId && 
-                   !parsed.userName; // Только автосохранения (без имени пользователя)
+                   !parsed.tag && 
+                   !parsed.characterName; // Только автосохранения (без тега и без имени персонажа)
         });
         
         console.debug(`[KV Cache Manager] Найдено ${autoSaveFiles.length} автосохранений для чата ${chatId} (лимит: ${maxFiles})`);
@@ -1098,12 +1495,56 @@ function formatFileSize(bytes) {
 }
 
 // Глобальные переменные для модалки загрузки
+// Новая структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
 let loadModalData = {
-    chats: {},
+    chats: {}, // Структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
     currentChatId: null,
-    selectedGroup: null,
+    selectedCharacters: {}, // { [characterName]: timestamp } - выбранные персонажи и их timestamp
     searchQuery: ''
 };
+
+// Группировка файлов по чатам и персонажам
+// Возвращает: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
+function groupFilesByChatAndCharacter(files) {
+    const chats = {};
+    
+    for (const file of files) {
+        const filename = file.name || file;
+        const parsed = parseSaveFilename(filename);
+        
+        if (!parsed) {
+            continue;
+        }
+        
+        const chatId = parsed.chatId;
+        const characterName = parsed.characterName || 'Unknown';
+        
+        if (!chats[chatId]) {
+            chats[chatId] = {};
+        }
+        
+        if (!chats[chatId][characterName]) {
+            chats[chatId][characterName] = [];
+        }
+        
+        chats[chatId][characterName].push({
+            timestamp: parsed.timestamp,
+            filename: filename,
+            tag: parsed.tag || null
+        });
+    }
+    
+    // Сортируем timestamp для каждого персонажа (от новых к старым)
+    for (const chatId in chats) {
+        for (const characterName in chats[chatId]) {
+            chats[chatId][characterName].sort((a, b) => {
+                return b.timestamp.localeCompare(a.timestamp);
+            });
+        }
+    }
+    
+    return chats;
+}
 
 // Открытие модалки загрузки
 async function openLoadModal() {
@@ -1122,10 +1563,11 @@ async function openLoadModal() {
         return;
     }
     
-    // Группируем файлы по чатам
-    loadModalData.chats = groupFilesByChat(filesList);
+    // Группируем файлы по чатам и персонажам
+    loadModalData.chats = groupFilesByChatAndCharacter(filesList);
     // Получаем нормализованный chatId
     loadModalData.currentChatId = getNormalizedChatId();
+    loadModalData.selectedCharacters = {};
     
     // Отображаем чаты и файлы
     renderLoadModalChats();
@@ -1136,11 +1578,11 @@ async function openLoadModal() {
 function closeLoadModal() {
     const modal = $("#kv-cache-load-modal");
     modal.css('display', 'none');
-    loadModalData.selectedGroup = null;
+    loadModalData.selectedCharacters = {};
     loadModalData.searchQuery = '';
     $("#kv-cache-load-search-input").val('');
     $("#kv-cache-load-confirm-button").prop('disabled', true);
-    $("#kv-cache-load-selected-info").text('Файл не выбран');
+    $("#kv-cache-load-selected-info").text('Персонажи не выбраны');
 }
 
 // Отображение списка чатов
@@ -1150,8 +1592,8 @@ function renderLoadModalChats() {
     const chats = loadModalData.chats;
     
     // Обновляем ID и счетчик для текущего чата
-    const currentChatGroups = chats[currentChatId] || [];
-    const currentCount = currentChatGroups.reduce((sum, g) => sum + g.files.length, 0);
+    const currentChatCharacters = chats[currentChatId] || {};
+    const currentCount = Object.values(currentChatCharacters).reduce((sum, files) => sum + files.length, 0);
     // Отображаем исходное имя чата (до нормализации) для читаемости
     const rawChatId = getCurrentChatId() || 'unknown';
     $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
@@ -1172,10 +1614,8 @@ function renderLoadModalChats() {
     for (const chatId of filteredChats) {
         if (chatId === currentChatId) continue;
         
-        const chatGroups = chats[chatId];
-        const totalFiles = chatGroups.reduce((sum, g) => sum + g.files.length, 0);
-        const latestGroup = chatGroups[0];
-        const dateTime = formatTimestampToDate(latestGroup.timestamp);
+        const chatCharacters = chats[chatId] || {};
+        const totalFiles = Object.values(chatCharacters).reduce((sum, files) => sum + files.length, 0);
         
         const chatItem = $(`
             <div class="kv-cache-load-chat-item" data-chat-id="${chatId}">
@@ -1205,61 +1645,55 @@ function selectLoadModalChat(chatId) {
         $(`.kv-cache-load-chat-item[data-chat-id="${chatId}"]`).addClass('active');
     }
     
-    // Отображаем файлы выбранного чата
+    // Отображаем персонажей выбранного чата
     renderLoadModalFiles(chatId);
     
     // Сбрасываем выбор
-    loadModalData.selectedGroup = null;
-    $(".kv-cache-load-file-item").removeClass('selected');
-    $(".kv-cache-load-file-group").removeClass('selected');
+    loadModalData.selectedCharacters = {};
     $("#kv-cache-load-confirm-button").prop('disabled', true);
-    $("#kv-cache-load-selected-info").text('Файл не выбран');
+    $("#kv-cache-load-selected-info").text('Персонажи не выбраны');
 }
 
-// Отображение файлов выбранного чата
+// Отображение персонажей выбранного чата
 function renderLoadModalFiles(chatId) {
     const filesList = $("#kv-cache-load-files-list");
     const chats = loadModalData.chats;
-    const chatGroups = chats[chatId] || [];
+    const chatCharacters = chats[chatId] || {};
     const searchQuery = loadModalData.searchQuery.toLowerCase();
     
-    if (chatGroups.length === 0) {
+    const characterNames = Object.keys(chatCharacters);
+    
+    if (characterNames.length === 0) {
         filesList.html('<div class="kv-cache-load-empty">Нет файлов для этого чата</div>');
         return;
     }
     
-    // Фильтруем группы по поисковому запросу
-    const filteredGroups = chatGroups.filter(group => {
+    // Фильтруем персонажей по поисковому запросу
+    const filteredCharacters = characterNames.filter(characterName => {
         if (!searchQuery) return true;
-        const userName = (group.userName || '').toLowerCase();
-        const timestamp = group.timestamp;
-        const dateTime = formatTimestampToDate(timestamp).toLowerCase();
-        return userName.includes(searchQuery) || dateTime.includes(searchQuery) || timestamp.includes(searchQuery);
+        return characterName.toLowerCase().includes(searchQuery);
     });
     
-    if (filteredGroups.length === 0) {
-        filesList.html('<div class="kv-cache-load-empty">Не найдено файлов по запросу</div>');
+    if (filteredCharacters.length === 0) {
+        filesList.html('<div class="kv-cache-load-empty">Не найдено персонажей по запросу</div>');
         return;
     }
     
     filesList.empty();
     
-    // Отображаем группы файлов (сгруппированные по timestamp)
-    for (const group of filteredGroups) {
-        const dateTime = formatTimestampToDate(group.timestamp);
-        const slotsCount = group.files.length;
-        const userName = group.userName ? `[${group.userName}]` : '';
+    // Отображаем персонажей с их timestamp
+    for (const characterName of filteredCharacters) {
+        const characterFiles = chatCharacters[characterName];
         
-        const groupElement = $(`
-            <div class="kv-cache-load-file-group collapsed" data-group-timestamp="${group.timestamp}">
+        const characterElement = $(`
+            <div class="kv-cache-load-file-group collapsed" data-character-name="${characterName}">
                 <div class="kv-cache-load-file-group-header">
                     <div class="kv-cache-load-file-group-title">
-                        <i class="fa-solid fa-calendar"></i>
-                        ${dateTime}
-                        ${userName ? `<span style="opacity: 0.7;">${userName}</span>` : ''}
+                        <i class="fa-solid fa-user"></i>
+                        ${characterName}
                     </div>
                     <div class="kv-cache-load-file-group-info">
-                        <span>${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''}</span>
+                        <span>${characterFiles.length} сохранени${characterFiles.length !== 1 ? 'й' : 'е'}</span>
                         <i class="fa-solid fa-chevron-down kv-cache-load-file-group-toggle"></i>
                     </div>
                 </div>
@@ -1268,77 +1702,66 @@ function renderLoadModalFiles(chatId) {
             </div>
         `);
         
-        // Добавляем файлы в группу
-        const content = groupElement.find('.kv-cache-load-file-group-content');
-        for (const file of group.files) {
-            const fileSize = formatFileSize(file.size);
+        // Добавляем timestamp для этого персонажа
+        const content = characterElement.find('.kv-cache-load-file-group-content');
+        for (const file of characterFiles) {
+            const dateTime = formatTimestampToDate(file.timestamp);
+            const tagLabel = file.tag ? ` [тег: ${file.tag}]` : '';
             
-            const fileItem = $(`
-                <div class="kv-cache-load-file-item" data-filename="${file.name}" data-timestamp="${group.timestamp}">
+            const timestampItem = $(`
+                <div class="kv-cache-load-file-item" data-character-name="${characterName}" data-timestamp="${file.timestamp}" data-filename="${file.filename}">
                     <div class="kv-cache-load-file-item-info">
                         <div class="kv-cache-load-file-item-name">
-                            <i class="fa-solid fa-file"></i>
-                            ${file.name}
+                            <i class="fa-solid fa-calendar"></i>
+                            ${dateTime}${tagLabel}
                         </div>
                         <div class="kv-cache-load-file-item-meta">
-                            <span>${fileSize}</span>
+                            <input type="radio" name="character-${characterName}" value="${file.timestamp}" />
                         </div>
                     </div>
                 </div>
             `);
             
-            fileItem.on('click', function(e) {
+            timestampItem.on('click', function(e) {
                 e.stopPropagation();
                 
-                // Убираем выделение с других элементов
-                $(".kv-cache-load-file-item").removeClass('selected');
-                $(".kv-cache-load-file-group").removeClass('selected');
+                // Выбираем этот timestamp для персонажа
+                const selectedTimestamp = file.timestamp;
+                loadModalData.selectedCharacters[characterName] = selectedTimestamp;
                 
-                // Выделяем всю группу
-                groupElement.addClass('selected');
-                fileItem.addClass('selected');
-                
-                // Сохраняем выбранную группу
-                loadModalData.selectedGroup = group;
-                
-                // Активируем кнопку загрузки
-                $("#kv-cache-load-confirm-button").prop('disabled', false);
-                $("#kv-cache-load-selected-info").html(`
-                    <strong>Выбрано:</strong> ${dateTime} ${userName} (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})
-                `);
+                // Обновляем UI
+                updateLoadModalSelection();
             });
             
-            content.append(fileItem);
+            content.append(timestampItem);
         }
         
-        // Обработчик сворачивания/разворачивания группы
-        groupElement.find('.kv-cache-load-file-group-header').on('click', function(e) {
-            // Не сворачиваем при клике на файл
+        // Обработчик сворачивания/разворачивания
+        characterElement.find('.kv-cache-load-file-group-header').on('click', function(e) {
             if ($(e.target).closest('.kv-cache-load-file-item').length) return;
             
-            // При клике на иконку или заголовок - сворачиваем/разворачиваем
             if ($(e.target).hasClass('kv-cache-load-file-group-toggle') || 
                 $(e.target).closest('.kv-cache-load-file-group-title').length ||
                 $(e.target).closest('.kv-cache-load-file-group-info').length) {
-                groupElement.toggleClass('collapsed');
-            }
-            
-            // При клике на заголовок (не на иконку) также выбираем группу
-            if (!$(e.target).hasClass('kv-cache-load-file-group-toggle')) {
-                $(".kv-cache-load-file-item").removeClass('selected');
-                $(".kv-cache-load-file-group").removeClass('selected');
-                groupElement.addClass('selected');
-                groupElement.find('.kv-cache-load-file-item').first().addClass('selected');
-                
-                loadModalData.selectedGroup = group;
-                $("#kv-cache-load-confirm-button").prop('disabled', false);
-                $("#kv-cache-load-selected-info").html(`
-                    <strong>Выбрано:</strong> ${dateTime} ${userName} (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''})
-                `);
+                characterElement.toggleClass('collapsed');
             }
         });
         
-        filesList.append(groupElement);
+        filesList.append(characterElement);
+    }
+}
+
+// Обновление информации о выбранных персонажах
+function updateLoadModalSelection() {
+    const selectedCount = Object.keys(loadModalData.selectedCharacters).length;
+    
+    if (selectedCount === 0) {
+        $("#kv-cache-load-confirm-button").prop('disabled', true);
+        $("#kv-cache-load-selected-info").text('Персонажи не выбраны');
+    } else {
+        $("#kv-cache-load-confirm-button").prop('disabled', false);
+        const charactersList = Object.keys(loadModalData.selectedCharacters).join(', ');
+        $("#kv-cache-load-selected-info").html(`<strong>Выбрано:</strong> ${selectedCount} персонаж${selectedCount !== 1 ? 'ей' : ''} (${charactersList})`);
     }
 }
 
@@ -1366,7 +1789,9 @@ async function getLastFileForChat(chatId) {
 }
 
 // Получение последнего кеша для персонажа
-async function getLastCacheForCharacter(characterName) {
+// @param {string} characterName - имя персонажа
+// @param {boolean} currentChatOnly - искать только в текущем чате (по умолчанию true)
+async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
     try {
         const filesList = await getFilesList();
         if (!filesList || filesList.length === 0) {
@@ -1375,6 +1800,9 @@ async function getLastCacheForCharacter(characterName) {
         
         // Нормализуем имя персонажа для сравнения
         const normalizedCharacterName = characterName.replace(/[^a-zA-Z0-9_-]/g, '_');
+        
+        // Получаем chatId текущего чата для фильтрации (если нужно)
+        const currentChatId = currentChatOnly ? getNormalizedChatId() : null;
         
         // Ищем файлы, содержащие имя персонажа
         const characterFiles = [];
@@ -1387,19 +1815,26 @@ async function getLastCacheForCharacter(characterName) {
                 continue;
             }
             
-            // Проверяем по userName в имени файла
-            if (parsed.userName) {
-                const normalizedUserName = parsed.userName.replace(/[^a-zA-Z0-9_-]/g, '_');
-                if (normalizedUserName === normalizedCharacterName) {
+            // Фильтруем по чату, если нужно
+            if (currentChatOnly && parsed.chatId !== currentChatId) {
+                continue;
+            }
+            
+            // Проверяем по characterName в имени файла (основной способ для режима групповых чатов)
+            if (parsed.characterName) {
+                const normalizedParsedName = parsed.characterName.replace(/[^a-zA-Z0-9_-]/g, '_');
+                if (normalizedParsedName === normalizedCharacterName) {
                     characterFiles.push({
                         filename: filename,
-                        slotId: parsed.slotId,
-                        timestamp: parsed.timestamp
+                        slotId: parsed.slotId, // может быть null для формата с characterName
+                        timestamp: parsed.timestamp,
+                        chatId: parsed.chatId
                     });
+                    continue; // Найден по characterName, не нужно проверять fallback
                 }
             }
             
-            // Также проверяем по имени файла (fallback)
+            // Также проверяем по имени файла (fallback, менее надежный способ)
             if (filename.includes(normalizedCharacterName) || filename.includes(characterName)) {
                 // Убеждаемся, что это не дубликат
                 const alreadyAdded = characterFiles.some(f => f.filename === filename);
@@ -1407,14 +1842,15 @@ async function getLastCacheForCharacter(characterName) {
                     characterFiles.push({
                         filename: filename,
                         slotId: parsed.slotId,
-                        timestamp: parsed.timestamp
+                        timestamp: parsed.timestamp,
+                        chatId: parsed.chatId
                     });
                 }
             }
         }
         
         if (characterFiles.length === 0) {
-            console.debug(`[KV Cache Manager] Не найдено кеша для персонажа ${characterName}`);
+            console.debug(`[KV Cache Manager] Не найдено кеша для персонажа ${characterName}${currentChatOnly ? ` в чате ${currentChatId}` : ''}`);
             return null;
         }
         
@@ -1425,7 +1861,7 @@ async function getLastCacheForCharacter(characterName) {
         
         // Возвращаем самый последний файл
         const lastFile = characterFiles[0];
-        console.debug(`[KV Cache Manager] Найден последний кеш для персонажа ${characterName}: ${lastFile.filename}`);
+        console.debug(`[KV Cache Manager] Найден последний кеш для персонажа ${characterName}: ${lastFile.filename}${currentChatOnly ? ` (в текущем чате)` : ' (во всех чатах)'}`);
         
         return {
             filename: lastFile.filename,
@@ -1519,10 +1955,12 @@ function openAutoLoadConfirmModal(group, chatId, chatName) {
     
     const dateTime = formatTimestampToDate(group.timestamp);
     const slotsCount = group.files.length;
-    const userName = group.userName ? ` [${group.userName}]` : '';
+    const tagLabel = group.tag ? ` [тег: ${group.tag}]` : '';
+    const characterLabel = group.characterName ? ` [персонаж: ${group.characterName}]` : '';
+    const label = tagLabel || characterLabel;
     
     $("#kv-cache-auto-load-confirm-info").html(`
-        Загрузить сохранение от <strong>${dateTime}${userName}</strong> (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''}) для чата <strong>${chatName}</strong>?
+        Загрузить сохранение от <strong>${dateTime}${label}</strong> (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''}) для чата <strong>${chatName}</strong>?
     `);
     
     autoLoadConfirmModalData = { group, chatId };
@@ -1588,47 +2026,95 @@ async function tryAutoLoadOnChatSwitch(chatId) {
 
 // Загрузка выбранного кеша
 async function loadSelectedCache() {
-    const selectedGroup = loadModalData.selectedGroup;
+    const selectedCharacters = loadModalData.selectedCharacters;
     
-    if (!selectedGroup) {
-        showToast('error', 'Файл не выбран');
+    if (!selectedCharacters || Object.keys(selectedCharacters).length === 0) {
+        showToast('error', 'Персонажи не выбраны');
         return;
     }
     
-    // Парсим slotId из имён файлов
-    const filesToLoad = [];
-    for (const file of selectedGroup.files) {
-        const filename = file.name;
-        if (file.slotId !== undefined) {
-            filesToLoad.push({
-                filename: filename,
-                slotId: file.slotId
-            });
-        } else {
-            // Fallback: парсим из имени файла
-            const parsed = parseSaveFilename(filename);
-            if (parsed) {
-                filesToLoad.push({
-                    filename: filename,
-                    slotId: parsed.slotId
-                });
-            } else {
-                console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
-            }
-        }
-    }
-    
-    if (filesToLoad.length === 0) {
-        showToast('warning', 'Не найдено файлов для загрузки');
-        return;
-    }
+    const chatId = loadModalData.currentChatId || getNormalizedChatId();
+    const chats = loadModalData.chats;
+    const chatCharacters = chats[chatId] || {};
     
     // Закрываем модалку
     closeLoadModal();
     
-    // Используем общую функцию загрузки
-    const chatId = loadModalData.currentChatId || getNormalizedChatId();
-    await loadFileGroup(selectedGroup, chatId);
+    showToast('info', `Начинаю загрузку кешей для ${Object.keys(selectedCharacters).length} персонажей...`, 'Загрузка');
+    
+    let loadedCount = 0;
+    let errors = [];
+    
+    // Инициализируем слоты, если режим групповых чатов включен
+    if (extensionSettings.groupChatMode) {
+        if (!extensionSettings.slots || extensionSettings.slots.length === 0) {
+            await initializeSlots();
+        }
+    }
+    
+    // Загружаем кеши для каждого выбранного персонажа
+    for (const characterName in selectedCharacters) {
+        const selectedTimestamp = selectedCharacters[characterName];
+        const characterFiles = chatCharacters[characterName] || [];
+        
+        // Находим файл с выбранным timestamp
+        const fileToLoad = characterFiles.find(f => f.timestamp === selectedTimestamp);
+        
+        if (!fileToLoad) {
+            errors.push(`${characterName}: файл не найден`);
+            continue;
+        }
+        
+        try {
+            let slotIndex = null;
+            
+            if (extensionSettings.groupChatMode) {
+                // В режиме групповых чатов получаем слот для персонажа
+                slotIndex = acquireSlot(characterName);
+                
+                if (slotIndex === null) {
+                    errors.push(`${characterName}: не удалось получить слот`);
+                    continue;
+                }
+            } else {
+                // В обычном режиме используем первый активный слот
+                const activeSlots = await getActiveSlots();
+                if (activeSlots.length > 0) {
+                    slotIndex = activeSlots[0];
+                } else {
+                    errors.push(`${characterName}: нет активных слотов`);
+                    continue;
+                }
+            }
+            
+            // Загружаем кеш
+            const loaded = await loadSlotCache(slotIndex, fileToLoad.filename);
+            
+            if (loaded) {
+                loadedCount++;
+                console.debug(`[KV Cache Manager] Загружен кеш для персонажа ${characterName} в слот ${slotIndex}`);
+            } else {
+                errors.push(`${characterName}: ошибка загрузки`);
+            }
+        } catch (e) {
+            console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${characterName}:`, e);
+            errors.push(`${characterName}: ${e.message}`);
+        }
+    }
+    
+    // Показываем результат
+    if (loadedCount > 0) {
+        if (errors.length > 0) {
+            showToast('warning', `Загружено ${loadedCount} из ${Object.keys(selectedCharacters).length} персонажей. Ошибки: ${errors.join(', ')}`, 'Загрузка');
+        } else {
+            showToast('success', `Успешно загружено ${loadedCount} персонажей`, 'Загрузка');
+        }
+        
+        // Обновляем список слотов
+        setTimeout(() => updateSlotsList(), 1000);
+    } else {
+        showToast('error', `Не удалось загрузить кеши. Ошибки: ${errors.join(', ')}`, 'Загрузка');
+    }
 }
 
 async function onLoadButtonClick() {
@@ -1679,7 +2165,7 @@ async function preloadAllGroupCharacters() {
                     if (evictedCharacter && evictedCharacter !== characterName) {
                         const chatId = getNormalizedChatId();
                         const timestamp = formatTimestamp();
-                        const filename = generateSaveFilename(chatId, timestamp, slotIndex, evictedCharacter);
+                        const filename = generateSaveFilename(chatId, timestamp, evictedCharacter);
                         await saveSlotCache(slotIndex, filename);
                         console.debug(`[KV Cache Manager] Сохранен кеш вытесняемого персонажа ${evictedCharacter}`);
                     }
@@ -1794,6 +2280,7 @@ jQuery(async () => {
     eventSource.on(event_types.APP_READY, async () => {
         if (extensionSettings.groupChatMode) {
             await initializeSlots();
+            await assignCharactersToSlots();
         }
     });
     
@@ -1852,7 +2339,7 @@ jQuery(async () => {
                     if (evictedCharacter && evictedCharacter !== characterName && evictedSlotIndex !== -1) {
                         const chatId = getNormalizedChatId();
                         const timestamp = formatTimestamp();
-                        const filename = generateSaveFilename(chatId, timestamp, evictedSlotIndex, evictedCharacter);
+                        const filename = generateSaveFilename(chatId, timestamp, evictedCharacter);
                         await saveSlotCache(evictedSlotIndex, filename);
                         console.debug(`[KV Cache Manager] Сохранен кеш вытесняемого персонажа ${evictedCharacter} в файл ${filename}`);
                     }
@@ -1892,8 +2379,10 @@ jQuery(async () => {
     });
     
     // Подписка на событие получения сообщения для автосохранения
-    eventSource.on(event_types.MESSAGE_RECEIVED, () => {
-        incrementMessageCounter();
+    eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
+        // Определяем персонажа из данных сообщения
+        const characterName = data?.char || data?.name || null;
+        incrementMessageCounter(characterName);
     });
     
     // Подписка на событие переключения чата для автозагрузки
@@ -1906,6 +2395,11 @@ jQuery(async () => {
             await clearAllSlots();
             // Не запоминаем последний загруженный чат, так как кеш будет очищен
             lastLoadedChatId = null;
+        }
+        
+        // Если включен режим групповых чатов, распределяем персонажей по слотам
+        if (extensionSettings.groupChatMode) {
+            await assignCharactersToSlots();
         }
         
         // Проверяем, включена ли автозагрузка
