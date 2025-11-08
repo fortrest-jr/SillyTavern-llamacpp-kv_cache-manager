@@ -5,6 +5,7 @@
 import { extension_settings, getContext, loadExtensionSettings } from "../../../extensions.js";
 import { saveSettingsDebounced, eventSource, event_types, getCurrentChatId, characters } from "../../../../script.js";
 import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
+import { getGroupMembers } from '../../../group-chats.js';
 
 // Имя расширения должно совпадать с именем папки
 const extensionName = "kv_cache-manager";
@@ -347,45 +348,49 @@ function getNormalizedChatId() {
     return normalizeChatId(getCurrentChatId());
 }
 
-// Получение списка персонажей текущего группового чата
-// Пытается определить персонажей из истории сообщений чата или использует глобальный массив characters
-async function getChatCharacters() {
-    const characterNames = new Set();
-    
+// Получение списка персонажей текущего чата
+// Использует правильный подход SillyTavern для определения персонажей
+function getChatCharacters() {
     try {
-        // Пытаемся получить контекст чата
         const context = getContext();
         
-        if (context && context.chat) {
-            // Извлекаем имена персонажей из сообщений чата
-            const messages = context.chat || [];
-            
-            for (const message of messages) {
-                if (message && message.name) {
-                    // Пропускаем системные сообщения и сообщения пользователя
-                    if (message.name !== 'You' && message.name !== 'System' && message.name.trim()) {
-                        characterNames.add(message.name);
-                    }
-                }
+        if (!context) {
+            console.warn('[KV Cache Manager] Не удалось получить контекст чата');
+            return [];
+        }
+        
+        // Проверяем, является ли чат групповым
+        if (context.groupId === null || context.groupId === undefined) {
+            // Обычный (одиночный) чат
+            // Возвращаем только имя персонажа (name2), пользователя (name1) не включаем
+            const characterName = context.name2;
+            if (characterName) {
+                console.debug(`[KV Cache Manager] Обычный чат, найден персонаж: ${characterName}`);
+                return [characterName];
             }
+            return [];
+        } else {
+            // Групповой чат
+            // Используем getGroupMembers() для получения массива объектов персонажей
+            const groupMembers = getGroupMembers(context.groupId);
+            
+            if (!groupMembers || groupMembers.length === 0) {
+                console.warn('[KV Cache Manager] Не найдено участников группового чата');
+                return [];
+            }
+            
+            // Извлекаем имена персонажей из массива объектов
+            const characterNames = groupMembers
+                .map(member => member?.name)
+                .filter(name => name && typeof name === 'string');
+            
+            console.debug(`[KV Cache Manager] Групповой чат, найдено ${characterNames.length} персонажей:`, characterNames);
+            return characterNames;
         }
     } catch (e) {
-        console.debug('[KV Cache Manager] Не удалось получить персонажей из контекста чата:', e);
+        console.error('[KV Cache Manager] Ошибка при получении персонажей чата:', e);
+        return [];
     }
-    
-    // Если не нашли персонажей в истории, используем глобальный массив characters
-    if (characterNames.size === 0 && characters && Array.isArray(characters)) {
-        for (const character of characters) {
-            if (character && character.name) {
-                characterNames.add(character.name);
-            }
-        }
-    }
-    
-    const result = Array.from(characterNames);
-    console.debug(`[KV Cache Manager] Найдено ${result.length} персонажей в текущем чате:`, result);
-    
-    return result;
 }
 
 // Генерация имени файла в едином формате
