@@ -1699,6 +1699,25 @@ function renderLoadModalFiles(chatId) {
         return;
     }
     
+    // Сортируем персонажей: сначала те, что распределены в слоты (только для текущего чата)
+    const isCurrentChat = chatId === loadModalData.currentChatId;
+    if (isCurrentChat && extensionSettings.groupChatMode && extensionSettings.slots) {
+        const slots = extensionSettings.slots;
+        const slotsCharacters = new Set(slots.filter(name => name && typeof name === 'string'));
+        
+        filteredCharacters.sort((a, b) => {
+            const aInSlots = slotsCharacters.has(a);
+            const bInSlots = slotsCharacters.has(b);
+            
+            // Персонажи в слотах идут первыми
+            if (aInSlots && !bInSlots) return -1;
+            if (!aInSlots && bInSlots) return 1;
+            
+            // Если оба в слотах или оба не в слотах, сохраняем исходный порядок
+            return 0;
+        });
+    }
+    
     filesList.empty();
     
     // Отображаем персонажей с их timestamp
