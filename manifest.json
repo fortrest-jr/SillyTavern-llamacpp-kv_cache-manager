@@ -3,6 +3,7 @@
   "loading_order": 11,
   "requires": [],
   "optional": [],
+  "generate_interceptor": "KVCacheManagerInterceptor",
   "js": "index.js",
   "css": "style.css",
   "version": "2.2.0",

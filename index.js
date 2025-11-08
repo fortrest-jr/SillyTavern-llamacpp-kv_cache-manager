@@ -2370,10 +2370,48 @@ jQuery(async () => {
     // Обновляем список слотов при запуске генерации
     eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, async (data) => {
         updateSlotsList();
+    });
+    
+    // Обработчик для установки id_slot в режиме групповых чатов
+    eventSource.on(event_types.TEXT_COMPLETION_SETTINGS_READY, (params) => {
+        if (extensionSettings.groupChatMode && currentSlot !== null) {
+            params["id_slot"] = currentSlot;
+            console.debug(`[KV Cache Manager] Установлен id_slot = ${currentSlot} для генерации`);
+        }
+    });
+    
+    // Функция-перехватчик генерации для загрузки кеша
+    /**
+     * Перехватчик генерации для загрузки кеша персонажа в слоты
+     * @param {any[]} chat - Массив сообщений чата
+     * @param {number} contextSize - Размер контекста
+     * @param {function(boolean): void} abort - Функция для остановки генерации
+     * @param {string} type - Тип генерации ('normal', 'regenerate', 'swipe', 'quiet', 'impersonate', 'continue')
+     */
+    async function KVCacheManagerInterceptor(chat, contextSize, abort, type) {
+        // Пропускаем тихие генерации и impersonate
+        if (type === 'quiet' || type === 'impersonate') {
+            return;
+        }
         
-        // Обработка режима групповых чатов
-        if (extensionSettings.groupChatMode && data && data.char) {
-            const characterName = data.char;
+        // Работаем только в режиме групповых чатов
+        if (!extensionSettings.groupChatMode) {
+            return;
+        }
+        
+        try {
+            const context = getContext();
+            
+            if (!context || !context.characterId) {
+                return;
+            }
+            
+            const character = context.characters[context.characterId];
+            if (!character || !character.name) {
+                return;
+            }
+            
+            const characterName = character.name;
             currentSlot = null;
             
             // Проверяем, прикреплен ли персонаж к слоту
@@ -2453,16 +2491,16 @@ jQuery(async () => {
                     currentSlot = acquireSlot(characterName);
                 }
             }
+        } catch (error) {
+            console.error('[KV Cache Manager] Ошибка в перехватчике генерации:', error);
+            // Не прерываем генерацию при ошибке
         }
-    });
+        
+        // НЕ вызываем abort() - генерация должна продолжиться
+    }
     
-    // Обработчик для установки id_slot в режиме групповых чатов
-    eventSource.on(event_types.TEXT_COMPLETION_SETTINGS_READY, (params) => {
-        if (extensionSettings.groupChatMode && currentSlot !== null) {
-            params["id_slot"] = currentSlot;
-            console.debug(`[KV Cache Manager] Установлен id_slot = ${currentSlot} для генерации`);
-        }
-    });
+    // Регистрируем функцию-перехватчик в глобальном объекте
+    window['KVCacheManagerInterceptor'] = KVCacheManagerInterceptor;
     
     // Подписка на событие получения сообщения для автосохранения
     eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
