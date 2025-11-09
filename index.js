@@ -37,10 +37,9 @@ let lastLoadedChatId = null;
 let currentSlot = null;
 
 // Текущее состояние слотов (не настройки, а состояние)
-// slots[i] = имя персонажа в слоте i (или undefined если слот свободен)
-// slotsUsage[i] = счетчик использования слота i
+// Массив объектов, описывающих состояние каждого слота
+// currentSlots[i] = { characterName: string | undefined, usage: number }
 let currentSlots = [];
-let currentSlotsUsage = [];
 
 // Обновление индикатора следующего сохранения
 // Показывает минимальное оставшееся количество сообщений среди всех персонажей
@@ -153,7 +152,7 @@ function incrementMessageCounter(characterName) {
         // Находим слот, в котором находится персонаж
         let slotIndex = null;
         if (extensionSettings.groupChatMode && currentSlots) {
-            slotIndex = currentSlots.findIndex(name => name === characterName);
+            slotIndex = currentSlots.findIndex(slot => slot?.characterName === characterName);
             if (slotIndex === -1) {
                 slotIndex = null;
             }
@@ -578,18 +577,15 @@ async function initializeSlots(totalSlots = null) {
         }
     }
     
-    // Инициализируем массивы состояния слотов
+    // Инициализируем массив объектов состояния слотов
     currentSlots = [];
-    currentSlotsUsage = [];
     
-    // Устанавливаем длину массивов
-    currentSlots.length = totalSlots;
-    currentSlotsUsage.length = totalSlots;
-    
-    // Инициализируем счетчики использования для новых слотов
+    // Создаем объекты для каждого слота
     for (let i = 0; i < totalSlots; i++) {
-        currentSlots[i] = undefined;
-        currentSlotsUsage[i] = 0;
+        currentSlots[i] = {
+            characterName: undefined,
+            usage: 0
+        };
     }
     
     console.debug(`[KV Cache Manager] Инициализировано ${totalSlots} слотов для режима групповых чатов`);
@@ -619,9 +615,10 @@ async function assignCharactersToSlots() {
     // Сохраняем кеш для всех персонажей, которые были в слотах перед очисткой
     // TODO: разобраться точнее с моментом очистки
     for (let i = 0; i < totalSlots; i++) {
-        const currentCharacter = currentSlots[i];
+        const slot = currentSlots[i];
+        const currentCharacter = slot?.characterName;
         if (currentCharacter && typeof currentCharacter === 'string') {
-            const usageCount = currentSlotsUsage[i] || 0;
+            const usageCount = slot.usage || 0;
             
             // Сохраняем кеш только если персонаж использовал слот минимум 2 раза
             if (usageCount >= 2) {
@@ -648,8 +645,10 @@ async function assignCharactersToSlots() {
     
     // Полностью очищаем все слоты
     for (let i = 0; i < totalSlots; i++) {
-        currentSlots[i] = undefined;
-        currentSlotsUsage[i] = 0;
+        currentSlots[i] = {
+            characterName: undefined,
+            usage: 0
+        };
     }
     
     if (chatCharacters.length === 0) {
@@ -660,31 +659,18 @@ async function assignCharactersToSlots() {
     
     console.debug(`[KV Cache Manager] Распределение ${chatCharacters.length} персонажей по ${totalSlots} слотам`);
     
-    // Если слотов достаточно для всех персонажей - фиксированное присвоение по порядку
-    if (totalSlots >= chatCharacters.length) {
-        // Присваиваем каждого персонажа к слоту по порядку
-        chatCharacters.forEach((characterName, index) => {
-            currentSlots[index] = characterName;
-            currentSlotsUsage[index] = 0; // Начальный счетчик использования
-        });
-        
-        console.debug(`[KV Cache Manager] Персонажи распределены по слотам (фиксированное присвоение):`, currentSlots);
-        
-        // Загружаем кеш для всех персонажей, которые были распределены в слоты
-        await loadCacheForSlottedCharacters();
-    } else {
-        // Слотов не хватает - используем циркуляцию с приоритетом по частоте использования
-        // Присваиваем персонажей к свободным слотам или вытесняем по приоритету
-        for (const characterName of chatCharacters) {
-            // Используем acquireSlot для получения слота (он сам решит, вытеснять или использовать свободный)
-            acquireSlot(characterName);
-        }
-        
-        console.debug(`[KV Cache Manager] Персонажи распределены по слотам (циркуляция):`, currentSlots);
-        
-        // Загружаем кеш для всех персонажей, которые были распределены в слоты
-        await loadCacheForSlottedCharacters();
+    // Распределяем персонажей по слотам: идем по индексу, пока не закончатся либо слоты, либо персонажи
+    for (let i = 0; i < totalSlots && i < chatCharacters.length; i++) {
+        currentSlots[i] = {
+            characterName: chatCharacters[i],
+            usage: 0 // Начальный счетчик использования
+        };
     }
+    
+    console.debug(`[KV Cache Manager] Персонажи распределены по слотам:`, currentSlots);
+    
+    // Загружаем кеш для всех персонажей, которые были распределены в слоты
+    await loadCacheForSlottedCharacters();
     
     // Обновляем UI
     updateSlotsAvailability();
@@ -698,8 +684,8 @@ async function loadCacheForSlottedCharacters() {
     
     // Получаем список персонажей из слотов (только тех, кто реально в слотах)
     const slottedCharacters = currentSlots
-        .filter(name => name && typeof name === 'string')
-        .map((characterName, index) => ({ characterName, slotIndex: index }));
+        .map((slot, index) => ({ characterName: slot?.characterName, slotIndex: index }))
+        .filter(item => item.characterName && typeof item.characterName === 'string');
     
     if (slottedCharacters.length === 0) {
         console.debug('[KV Cache Manager] Нет персонажей в слотах для загрузки кеша');
@@ -752,28 +738,29 @@ function acquireSlot(characterName, isGeneration = false) {
     }
     
     // 1. Проверяем, есть ли персонаж уже в слоте - если да, возвращаем этот слот
-    const existingIndex = currentSlots.findIndex(name => name === characterName);
+    const existingIndex = currentSlots.findIndex(slot => slot?.characterName === characterName);
     if (existingIndex !== -1) {
         // Персонаж уже в слоте - возвращаем существующий слот
         // Увеличиваем счетчик использования только при генерации
         if (isGeneration) {
-            currentSlotsUsage[existingIndex] = (currentSlotsUsage[existingIndex] || 0) + 1;
-            console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${existingIndex}, счетчик увеличен до: ${currentSlotsUsage[existingIndex]}`);
+            currentSlots[existingIndex].usage = (currentSlots[existingIndex].usage || 0) + 1;
+            console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${existingIndex}, счетчик увеличен до: ${currentSlots[existingIndex].usage}`);
         } else {
-            console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${existingIndex}, счетчик: ${currentSlotsUsage[existingIndex] || 0}`);
+            console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${existingIndex}, счетчик: ${currentSlots[existingIndex].usage || 0}`);
         }
         updateSlotsAvailability();
         return existingIndex;
     }
     
     // 2. Персонаж не в слоте - ищем пустой слот
-    const freeSlotIndex = currentSlots.findIndex(name => name === undefined);
+    const freeSlotIndex = currentSlots.findIndex(slot => !slot?.characterName);
     if (freeSlotIndex !== -1) {
         // Найден пустой слот - устанавливаем персонажа туда
-        currentSlots[freeSlotIndex] = characterName;
-        // Счетчик = 1 только при генерации, иначе 0
-        currentSlotsUsage[freeSlotIndex] = isGeneration ? 1 : 0;
-        console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в пустой слот ${freeSlotIndex}, счетчик: ${currentSlotsUsage[freeSlotIndex]}`);
+        currentSlots[freeSlotIndex] = {
+            characterName: characterName,
+            usage: isGeneration ? 1 : 0
+        };
+        console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в пустой слот ${freeSlotIndex}, счетчик: ${currentSlots[freeSlotIndex].usage}`);
         updateSlotsAvailability();
         return freeSlotIndex;
     }
@@ -783,7 +770,7 @@ function acquireSlot(characterName, isGeneration = false) {
     let minUsageIndex = -1;
     
     for (let i = 0; i < currentSlots.length; i++) {
-        const currentUsage = currentSlotsUsage[i] || 0;
+        const currentUsage = currentSlots[i]?.usage || 0;
         if (currentUsage < minUsage) {
             minUsage = currentUsage;
             minUsageIndex = i;
@@ -796,12 +783,13 @@ function acquireSlot(characterName, isGeneration = false) {
     }
     
     // Освобождаем слот с наименьшим использованием
-    const evictedCharacter = currentSlots[minUsageIndex];
+    const evictedSlot = currentSlots[minUsageIndex];
+    const evictedCharacter = evictedSlot?.characterName;
     
     // Сохраняем кеш вытесняемого персонажа перед освобождением слота
     // TODO: разобраться точнее с моментом очистки
     if (evictedCharacter && typeof evictedCharacter === 'string') {
-        const usageCount = currentSlotsUsage[minUsageIndex] || 0;
+        const usageCount = evictedSlot.usage || 0;
         
         // Сохраняем кеш только если персонаж использовал слот минимум 2 раза
         if (usageCount >= 2) {
@@ -827,11 +815,12 @@ function acquireSlot(characterName, isGeneration = false) {
     }
     
     // Устанавливаем персонажа в освобожденный слот
-    currentSlots[minUsageIndex] = characterName;
-    // Счетчик = 1 только при генерации, иначе 0
-    currentSlotsUsage[minUsageIndex] = isGeneration ? 1 : 0;
+    currentSlots[minUsageIndex] = {
+        characterName: characterName,
+        usage: isGeneration ? 1 : 0
+    };
     
-    console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в слот ${minUsageIndex}${evictedCharacter ? ` (вытеснен ${evictedCharacter}, использование: ${minUsage})` : ' (свободный слот)'}, счетчик: ${currentSlotsUsage[minUsageIndex]}`);
+    console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в слот ${minUsageIndex}${evictedCharacter ? ` (вытеснен ${evictedCharacter}, использование: ${minUsage})` : ' (свободный слот)'}, счетчик: ${currentSlots[minUsageIndex].usage}`);
     
     updateSlotsAvailability();
     
@@ -844,9 +833,12 @@ function releaseSlot(slotIndex) {
         return;
     }
     
-    const characterName = currentSlots[slotIndex];
-    currentSlots[slotIndex] = undefined;
-    currentSlotsUsage[slotIndex] = 0;
+    const slot = currentSlots[slotIndex];
+    const characterName = slot?.characterName;
+    currentSlots[slotIndex] = {
+        characterName: undefined,
+        usage: 0
+    };
     
     console.debug(`[KV Cache Manager] Освобожден слот ${slotIndex} (персонаж: ${characterName})`);
     
@@ -861,8 +853,10 @@ function releaseAllSlots() {
     
     const totalSlots = currentSlots.length || 0;
     for (let i = 0; i < totalSlots; i++) {
-        currentSlots[i] = undefined;
-        currentSlotsUsage[i] = 0;
+        currentSlots[i] = {
+            characterName: undefined,
+            usage: 0
+        };
     }
     
     console.debug(`[KV Cache Manager] Освобождены все слоты`);
@@ -886,14 +880,14 @@ async function updateSlotsList() {
         if (extensionSettings.groupChatMode && currentSlots && currentSlots.length > 0) {
             // Режим групповых чатов: показываем детальную информацию о слотах
             const slots = currentSlots;
-            const slotsUsage = currentSlotsUsage || [];
             
             let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
             let usedCount = 0;
             
             for (let i = 0; i < slots.length; i++) {
-                const characterName = slots[i];
-                const usage = slotsUsage[i] || 0;
+                const slot = slots[i];
+                const characterName = slot?.characterName;
+                const usage = slot?.usage || 0;
                 const isUsed = characterName && typeof characterName === 'string';
                 
                 if (isUsed) {
@@ -1018,8 +1012,8 @@ async function loadSlotCache(slotId, filename) {
         }
         
         // При любой загрузке кеша сбрасываем счетчик использования в 0
-        if (extensionSettings.groupChatMode && currentSlotsUsage && slotId !== null && slotId !== undefined) {
-            currentSlotsUsage[slotId] = 0;
+        if (extensionSettings.groupChatMode && currentSlots && slotId !== null && slotId !== undefined && currentSlots[slotId]) {
+            currentSlots[slotId].usage = 0;
         }
         
         console.debug(`[KV Cache Manager] Кеш успешно загружен для слота ${slotId}, счетчик использования сброшен в 0`);
@@ -1259,7 +1253,8 @@ async function saveCache(requestTag = false) {
     
     if (extensionSettings.groupChatMode && currentSlots) {
         // В режиме групповых чатов используем информацию о персонажах в слотах
-        currentSlots.forEach((characterName, slotIndex) => {
+        currentSlots.forEach((slot, slotIndex) => {
+            const characterName = slot?.characterName;
             if (characterName && typeof characterName === 'string') {
                 charactersToSave.push({
                     characterName: characterName,
@@ -1789,7 +1784,7 @@ function renderLoadModalFiles(chatId) {
     const isCurrentChat = chatId === loadModalData.currentChatId;
     if (isCurrentChat && extensionSettings.groupChatMode && currentSlots) {
         const slots = currentSlots;
-        const slotsCharacters = new Set(slots.filter(name => name && typeof name === 'string'));
+        const slotsCharacters = new Set(slots.map(slot => slot?.characterName).filter(name => name && typeof name === 'string'));
         
         filteredCharacters.sort((a, b) => {
             const aInSlots = slotsCharacters.has(a);
@@ -2040,7 +2035,7 @@ async function loadFileGroup(group, chatId) {
         // Загружаем кеш для персонажей, используя существующие слоты или выделяя новые
         if (extensionSettings.groupChatMode) {
             // Проверяем, есть ли персонаж в слотах
-            let slotIndex = currentSlots ? currentSlots.findIndex(name => name === parsed.characterName) : -1;
+            let slotIndex = currentSlots ? currentSlots.findIndex(slot => slot?.characterName === parsed.characterName) : -1;
             
             if (slotIndex !== -1) {
                 // Персонаж уже в слотах - загружаем кеш в существующий слот
@@ -2268,7 +2263,7 @@ async function loadSelectedCache() {
             
             if (extensionSettings.groupChatMode) {
                 // Проверяем, есть ли персонаж в слотах
-                slotIndex = currentSlots ? currentSlots.findIndex(name => name === characterName) : -1;
+                slotIndex = currentSlots ? currentSlots.findIndex(slot => slot?.characterName === characterName) : -1;
                 
                 if (slotIndex !== -1) {
                     // Персонаж уже в слотах - загружаем кеш в существующий слот
@@ -2381,7 +2376,8 @@ async function preloadAllGroupCharacters() {
                 
                 if (slotIndex !== null) {
                     // Сохраняем кеш вытесняемого персонажа, если слот был занят
-                    const evictedCharacter = currentSlots[slotIndex];
+                    const evictedSlot = currentSlots[slotIndex];
+                    const evictedCharacter = evictedSlot?.characterName;
                     if (evictedCharacter && evictedCharacter !== characterName) {
                         const chatId = getNormalizedChatId();
                         const timestamp = formatTimestamp();
@@ -2552,16 +2548,15 @@ jQuery(async () => {
             currentSlot = null;
             
             // Проверяем, прикреплен ли персонаж к слоту
-            const existingSlotIndex = currentSlots ? currentSlots.findIndex(name => name === characterName) : -1;
+            const existingSlotIndex = currentSlots ? currentSlots.findIndex(slot => slot?.characterName === characterName) : -1;
             
             if (existingSlotIndex !== -1) {
                 // Персонаж уже прикреплен к слоту
                 currentSlot = existingSlotIndex;
                 // Увеличиваем счетчик использования
-                if (!currentSlotsUsage) {
-                    currentSlotsUsage = [];
+                if (currentSlots[existingSlotIndex]) {
+                    currentSlots[existingSlotIndex].usage = (currentSlots[existingSlotIndex].usage || 0) + 1;
                 }
-                currentSlotsUsage[existingSlotIndex] = (currentSlotsUsage[existingSlotIndex] || 0) + 1;
                 updateSlotsAvailability();
                 console.debug(`[KV Cache Manager] Персонаж ${characterName} уже прикреплен к слоту ${existingSlotIndex}`);
             } else {
