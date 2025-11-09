@@ -1194,9 +1194,11 @@ async function getFilesList() {
 function groupFilesByChat(files) {
     const chats = {};
     
-    for (const file of files) {
-        const filename = file.name || file;
-        const parsed = parseSaveFilename(filename);
+    // Парсим файлы один раз
+    const parsedFiles = parseFilesList(files);
+    
+    for (const file of parsedFiles) {
+        const { parsed, name: filename } = file;
         
         if (!parsed) {
             // Если не удалось распарсить, пропускаем этот файл
@@ -1231,10 +1233,7 @@ function groupFilesByChat(files) {
     
     // Сортируем файлы внутри каждого чата от новых к старым (по timestamp)
     for (const chatId in chats) {
-        chats[chatId].sort((a, b) => {
-            // Сравниваем timestamp как строки (они в формате YYYYMMDDHHMMSS)
-            return b.timestamp.localeCompare(a.timestamp);
-        });
+        sortByTimestamp(chats[chatId]);
     }
     
     return chats;
@@ -1494,24 +1493,20 @@ async function rotateCharacterFiles(characterName) {
         // Фильтруем только автосохранения для этого персонажа в текущем чате (без тега)
         // Сравниваем нормализованные имена, так как в файлах хранятся нормализованные имена
         const normalizedName = normalizeCharacterName(characterName);
-        const characterFiles = filesList.filter(file => {
-            const parsed = parseSaveFilename(file.name);
-            if (!parsed) return false;
-            const parsedNormalizedName = normalizeCharacterName(parsed.characterName || '');
-            return parsed.chatId === chatId && 
-                   parsedNormalizedName === normalizedName &&
-                   !parsed.tag; // Только автосохранения (без тега)
-        });
+        // Парсим файлы один раз и фильтруем
+        const characterFiles = parseFilesList(filesList)
+            .filter(({ parsed }) => {
+                if (!parsed) return false;
+                const parsedNormalizedName = normalizeCharacterName(parsed.characterName || '');
+                return parsed.chatId === chatId && 
+                       parsedNormalizedName === normalizedName &&
+                       !parsed.tag; // Только автосохранения (без тега)
+            });
         
         console.debug(`[KV Cache Manager] Найдено ${characterFiles.length} автосохранений для персонажа ${characterName} в чате ${chatId} (лимит: ${maxFiles})`);
         
         // Сортируем по timestamp (от новых к старым)
-        characterFiles.sort((a, b) => {
-            const parsedA = parseSaveFilename(a.name);
-            const parsedB = parseSaveFilename(b.name);
-            if (!parsedA || !parsedB) return 0;
-            return parsedB.timestamp.localeCompare(parsedA.timestamp);
-        });
+        sortFilesByTimestamp(characterFiles);
         
         if (characterFiles.length > maxFiles) {
             const filesToDelete = characterFiles.slice(maxFiles);
@@ -1547,23 +1542,19 @@ async function rotateAutoSaveFiles() {
         const filesList = await getFilesList();
         
         // Фильтруем только автосохранения для текущего чата (без тега и без имени персонажа)
-        const autoSaveFiles = filesList.filter(file => {
-            const parsed = parseSaveFilename(file.name);
-            return parsed && 
-                   parsed.chatId === chatId && 
-                   !parsed.tag && 
-                   !parsed.characterName; // Только автосохранения (без тега и без имени персонажа)
-        });
+        // Парсим файлы один раз и фильтруем
+        const autoSaveFiles = parseFilesList(filesList)
+            .filter(({ parsed }) => {
+                return parsed && 
+                       parsed.chatId === chatId && 
+                       !parsed.tag && 
+                       !parsed.characterName; // Только автосохранения (без тега и без имени персонажа)
+            });
         
         console.debug(`[KV Cache Manager] Найдено ${autoSaveFiles.length} автосохранений для чата ${chatId} (лимит: ${maxFiles})`);
         
         // Сортируем по timestamp (от новых к старым)
-        autoSaveFiles.sort((a, b) => {
-            const parsedA = parseSaveFilename(a.name);
-            const parsedB = parseSaveFilename(b.name);
-            if (!parsedA || !parsedB) return 0;
-            return parsedB.timestamp.localeCompare(parsedA.timestamp);
-        });
+        sortFilesByTimestamp(autoSaveFiles);
         
         if (autoSaveFiles.length > maxFiles) {
             const filesToDelete = autoSaveFiles.slice(maxFiles);
@@ -1622,11 +1613,57 @@ function formatFileSize(bytes) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
+// Парсинг списка файлов с добавлением распарсенных данных
+// Возвращает массив файлов с добавленным полем parsed
+// @param {Array} files - массив файлов (объекты с полем name или строки)
+// @returns {Array} - массив файлов с добавленным полем parsed и гарантированным полем name
+function parseFilesList(files) {
+    return files.map(file => {
+        const filename = file.name || file;
+        const parsed = parseSaveFilename(filename);
+        // Гарантируем наличие поля name в результате
+        return { ...(typeof file === 'object' ? file : {}), name: filename, parsed };
+    });
+}
+
+// Сортировка файлов по timestamp
+// @param {Array} files - массив файлов с полем parsed
+// @param {boolean} descending - true для сортировки от новых к старым (по умолчанию), false для обратного порядка
+// @returns {Array} - отсортированный массив файлов
+function sortFilesByTimestamp(files, descending = true) {
+    return files.sort((a, b) => {
+        const parsedA = a.parsed;
+        const parsedB = b.parsed;
+        if (!parsedA || !parsedB) return 0;
+        if (descending) {
+            return parsedB.timestamp.localeCompare(parsedA.timestamp);
+        } else {
+            return parsedA.timestamp.localeCompare(parsedB.timestamp);
+        }
+    });
+}
+
+// Сортировка объектов с timestamp по timestamp
+// @param {Array} items - массив объектов с полем timestamp
+// @param {boolean} descending - true для сортировки от новых к старым (по умолчанию), false для обратного порядка
+// @returns {Array} - отсортированный массив
+function sortByTimestamp(items, descending = true) {
+    return items.sort((a, b) => {
+        if (!a.timestamp || !b.timestamp) return 0;
+        if (descending) {
+            return b.timestamp.localeCompare(a.timestamp);
+        } else {
+            return a.timestamp.localeCompare(b.timestamp);
+        }
+    });
+}
+
 // Глобальные переменные для модалки загрузки
 // Новая структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
 let loadModalData = {
     chats: {}, // Структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
-    currentChatId: null,
+    currentChatId: null, // ID текущего чата (для отображения)
+    selectedChatId: null, // ID выбранного чата в модалке (для загрузки)
     selectedCharacters: {}, // { [characterName]: timestamp } - выбранные персонажи и их timestamp
     searchQuery: ''
 };
@@ -1636,9 +1673,11 @@ let loadModalData = {
 function groupFilesByChatAndCharacter(files) {
     const chats = {};
     
-    for (const file of files) {
-        const filename = file.name || file;
-        const parsed = parseSaveFilename(filename);
+    // Парсим файлы один раз
+    const parsedFiles = parseFilesList(files);
+    
+    for (const file of parsedFiles) {
+        const { parsed, name: filename } = file;
         
         if (!parsed) {
             continue;
@@ -1665,9 +1704,7 @@ function groupFilesByChatAndCharacter(files) {
     // Сортируем timestamp для каждого персонажа (от новых к старым)
     for (const chatId in chats) {
         for (const characterName in chats[chatId]) {
-            chats[chatId][characterName].sort((a, b) => {
-                return b.timestamp.localeCompare(a.timestamp);
-            });
+            sortByTimestamp(chats[chatId][characterName]);
         }
     }
     
@@ -1695,6 +1732,7 @@ async function openLoadModal() {
     loadModalData.chats = groupFilesByChatAndCharacter(filesList);
     // Получаем нормализованный chatId
     loadModalData.currentChatId = getNormalizedChatId();
+    loadModalData.selectedChatId = null; // Сбрасываем выбранный чат
     loadModalData.selectedCharacters = {};
     
     // Отображаем чаты и файлы
@@ -1765,13 +1803,16 @@ function selectLoadModalChat(chatId) {
     // Убираем активный класс со всех чатов
     $(".kv-cache-load-chat-item").removeClass('active');
     
-    // Устанавливаем активный класс
+    // Устанавливаем активный класс и сохраняем выбранный чат
     if (chatId === 'current') {
         $(".kv-cache-load-chat-item-current").addClass('active');
         chatId = loadModalData.currentChatId;
     } else {
         $(`.kv-cache-load-chat-item[data-chat-id="${chatId}"]`).addClass('active');
     }
+    
+    // Сохраняем выбранный чат для использования при загрузке
+    loadModalData.selectedChatId = chatId;
     
     // Отображаем персонажей выбранного чата
     renderLoadModalFiles(chatId);
@@ -1969,12 +2010,14 @@ async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
         // Получаем chatId текущего чата для фильтрации (если нужно)
         const currentChatId = currentChatOnly ? getNormalizedChatId() : null;
         
+        // Парсим файлы один раз и фильтруем
+        const parsedFiles = parseFilesList(filesList);
+        
         // Ищем файлы, содержащие имя персонажа
         const characterFiles = [];
         
-        for (const file of filesList) {
-            const filename = file.name || file;
-            const parsed = parseSaveFilename(filename);
+        for (const file of parsedFiles) {
+            const { parsed, name: filename } = file;
             
             if (!parsed) {
                 continue;
@@ -2002,7 +2045,7 @@ async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
             if (filename.includes(normalizedCharacterName) || filename.includes(characterName)) {
                 // Убеждаемся, что это не дубликат
                 const alreadyAdded = characterFiles.some(f => f.filename === filename);
-                if (!alreadyAdded && parsed) {
+                if (!alreadyAdded) {
                     characterFiles.push({
                         filename: filename,
                         timestamp: parsed.timestamp,
@@ -2018,9 +2061,7 @@ async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
         }
         
         // Сортируем по timestamp (от новых к старым)
-        characterFiles.sort((a, b) => {
-            return b.timestamp.localeCompare(a.timestamp);
-        });
+        sortByTimestamp(characterFiles);
         
         // Возвращаем самый последний файл
         const lastFile = characterFiles[0];
@@ -2089,11 +2130,13 @@ async function loadFileGroup(group, chatId) {
             }
             
             // Счетчик будет сброшен в 0 в loadSlotCache при загрузке кеша
+            // Сохраняем распарсенные данные, чтобы не парсить повторно
             filesToLoad.push({
                 filename: filename,
                 slotId: slotIndex,
                 characterName: parsed.characterName,
-                timestamp: parsed.timestamp
+                timestamp: parsed.timestamp,
+                parsed: parsed // Сохраняем распарсенные данные
             });
         } else {
             // В обычном режиме используем первый активный слот
@@ -2103,7 +2146,8 @@ async function loadFileGroup(group, chatId) {
                     filename: filename,
                     slotId: activeSlots[0],
                     characterName: parsed.characterName,
-                    timestamp: parsed.timestamp
+                    timestamp: parsed.timestamp,
+                    parsed: parsed // Сохраняем распарсенные данные
                 });
             } else {
                 console.warn(`[KV Cache Manager] Нет активных слотов для загрузки файла ${filename}`);
@@ -2123,7 +2167,7 @@ async function loadFileGroup(group, chatId) {
     let errors = [];
     const successfullyLoaded = []; // Список успешно загруженных персонажей с датой-временем
     
-    for (const { filename, slotId, characterName, timestamp } of filesToLoad) {
+    for (const { filename, slotId, characterName, timestamp, parsed: fileParsed } of filesToLoad) {
         if (slotId === null || slotId === undefined) {
             errors.push(`слот null (файл: ${filename})`);
             continue;
@@ -2134,23 +2178,28 @@ async function loadFileGroup(group, chatId) {
                 loadedCount++;
                 console.debug(`[KV Cache Manager] Загружен кеш для слота ${slotId} из файла ${filename}`);
                 
+                // Используем уже распарсенные данные, если они есть, иначе парсим
+                const parsed = fileParsed || parseSaveFilename(filename);
+                
                 // Форматируем дату-время из timestamp для тоста
                 let dateTimeStr = '';
                 if (timestamp) {
                     dateTimeStr = formatTimestampToDate(timestamp);
-                } else {
-                    // Парсим timestamp из имени файла, если не передан
-                    const parsed = parseSaveFilename(filename);
-                    if (parsed && parsed.timestamp) {
-                        dateTimeStr = formatTimestampToDate(parsed.timestamp);
-                    }
+                } else if (parsed && parsed.timestamp) {
+                    dateTimeStr = formatTimestampToDate(parsed.timestamp);
                 }
                 
                 const displayName = characterName || `слот ${slotId}`;
                 const dateTimeLabel = dateTimeStr ? ` (${dateTimeStr})` : '';
+                
+                // Показываем информацию о чате, если кеш загружен из другого чата
+                const currentChatId = getNormalizedChatId();
+                const cacheChatId = parsed?.chatId;
+                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
+                
                 successfullyLoaded.push({ name: displayName, dateTime: dateTimeStr });
                 
-                showToast('success', `Загружен кеш для ${displayName} ${dateTimeLabel}`, 'Загрузка кеша');
+                showToast('success', `Загружен кеш для ${displayName} ${dateTimeLabel}${chatInfo}`, 'Загрузка кеша');
             } else {
                 errors.push(characterName || `слот ${slotId}`);
             }
@@ -2263,9 +2312,10 @@ async function loadSelectedCache() {
         return;
     }
     
-    const chatId = loadModalData.currentChatId || getNormalizedChatId();
+    // Используем выбранный чат из модалки, если он был выбран, иначе используем текущий
+    const selectedChatId = loadModalData.selectedChatId || loadModalData.currentChatId || getNormalizedChatId();
     const chats = loadModalData.chats;
-    const chatCharacters = chats[chatId] || {};
+    const chatCharacters = chats[selectedChatId] || {};
     
     closeLoadModal();
     
@@ -2352,12 +2402,20 @@ async function loadSelectedCache() {
                 loadedCount++;
                 console.debug(`[KV Cache Manager] Загружен кеш для персонажа ${characterName} в слот ${slotIndex}`);
                 
+                // Парсим имя файла один раз для получения информации о чате
+                const parsed = parseSaveFilename(fileToLoad.filename);
+                
                 // Форматируем дату-время из timestamp для тоста
                 const dateTimeStr = formatTimestampToDate(fileToLoad.timestamp);
                 
+                // Показываем информацию о чате, если кеш загружен из другого чата
+                const currentChatId = getNormalizedChatId();
+                const cacheChatId = parsed?.chatId;
+                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
+                
                 // Выводим тост для каждого успешно загруженного персонажа
                 if (extensionSettings.showNotifications) {
-                    showToast('success', `Загружен кеш для ${characterName} (${dateTimeStr})`, 'Загрузка кеша');
+                    showToast('success', `Загружен кеш для ${characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
                 }
             } else {
                 errors.push(`${characterName}: ошибка загрузки`);
@@ -2418,8 +2476,8 @@ async function preloadAllGroupCharacters() {
         console.debug(`[KV Cache Manager] Обрабатываю персонажа ${characterName}...`);
         
         try {
-            // Ищем кеш персонажа
-            const cacheInfo = await getLastCacheForCharacter(characterName);
+            // Ищем кеш персонажа во всех чатах, чтобы можно было загрузить кеш из другого чата
+            const cacheInfo = await getLastCacheForCharacter(characterName, false);
             
             if (cacheInfo) {
                 // Получаем слот для персонажа (предзагрузка, не генерация - счетчик = 0)
@@ -2432,7 +2490,12 @@ async function preloadAllGroupCharacters() {
                     
                     if (loaded) {
                         loadedCount++;
-                        console.debug(`[KV Cache Manager] Предзагружен кеш для персонажа ${characterName} в слот ${slotIndex}`);
+                        // Показываем информацию о чате, если кеш загружен из другого чата
+                        const parsed = parseSaveFilename(cacheInfo.filename);
+                        const currentChatId = getNormalizedChatId();
+                        const cacheChatId = parsed?.chatId;
+                        const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
+                        console.debug(`[KV Cache Manager] Предзагружен кеш для персонажа ${characterName} в слот ${slotIndex}${chatInfo}`);
                     } else {
                         errors.push(characterName);
                         console.warn(`[KV Cache Manager] Не удалось загрузить кеш для персонажа ${characterName}`);
@@ -2683,6 +2746,8 @@ jQuery(async () => {
         }
         
         if (currentChatId) {
+            // Обновляем выбранный чат при поиске
+            loadModalData.selectedChatId = currentChatId;
             renderLoadModalFiles(currentChatId);
         }
     });
