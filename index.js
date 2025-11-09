@@ -1057,6 +1057,14 @@ async function loadSlotCache(slotId, filename) {
             return false;
         }
         
+        // Читаем тело ответа, чтобы убедиться, что операция полностью завершена
+        try {
+            const responseText = await response.text();
+            showToast('info', `[KV Cache Manager] Ответ сервера при загрузке кеша: ${responseText}`, 'Генерация');
+        } catch (e) {
+            console.warn(`[KV Cache Manager] Не удалось прочитать ответ сервера при загрузке кеша:`, e);
+        }
+        
         // При любой загрузке кеша сбрасываем счетчик использования в 0
         if (extensionSettings.groupChatMode && currentSlots && slotId !== null && slotId !== undefined && currentSlots[slotId]) {
             currentSlots[slotId].usage = 0;
@@ -2705,10 +2713,18 @@ jQuery(async () => {
                     // Не прерываем генерацию при ошибке загрузки кеша
                 }
             }
+            
+            // Логируем завершение интерсептора для отладки
+            const finalCharacterName = characterName || 'неизвестный';
+            const finalSlot = currentSlot !== null ? currentSlot : 'неизвестный';
+            showToast('info', `[KV Cache Manager] Интерсептор генерации завершен для персонажа ${finalCharacterName}, слот ${finalSlot}`, 'Генерация');
         } catch (error) {
             console.error('[KV Cache Manager] Ошибка в перехватчике генерации:', error);
             showToast('error', `Ошибка при перехвате генерации: ${error.message}`, 'Генерация');
         }
+        
+        // Финальное логирование - интерсептор полностью завершен
+        showToast('info', `[KV Cache Manager] Интерсептор генерации полностью завершен, генерация может продолжиться`, 'Генерация');
     }
     
     // Регистрируем функцию-перехватчик в глобальном объекте
