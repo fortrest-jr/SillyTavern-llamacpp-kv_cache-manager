@@ -756,7 +756,7 @@ async function loadCacheForSlottedCharacters() {
 // @param {string} characterName - Имя персонажа
 // @returns {number|null} - Индекс слота или null, если персонаж не найден в слотах
 function findCharacterSlotIndex(characterName) {
-    if (!extensionSettings.groupChatMode || !currentSlots) {
+    if (!currentSlots) {
         return null;
     }
     
@@ -2623,6 +2623,11 @@ jQuery(async () => {
             }
             
             const characterName = character.name;
+            
+            // Проверяем, был ли персонаж уже в слоте ДО получения слота
+            // Это нужно, чтобы не загружать кеш, если персонаж уже был в слоте (например, после ручной загрузки)
+            const wasAlreadyInSlot = findCharacterSlotIndex(characterName) !== null;
+            
             currentSlot = await acquireSlot(characterName);
             
             if (currentSlot === null) {
@@ -2630,10 +2635,9 @@ jQuery(async () => {
                 showToast('error', `Не удалось получить слот для персонажа ${characterName} при генерации`, 'Генерация');
             } else {
                 // Управление счетчиком использования происходит здесь, в перехватчике генерации
-                // Проверяем, был ли персонаж уже в слоте по счетчику использования
-                // Если usage === 0, значит это новый слот (персонаж только что получил слот)
-                // Если usage > 0, значит персонаж уже был в слоте
-                const isNewSlot = currentSlots[currentSlot]?.usage === 0;
+                // Загружаем кеш только если персонаж НЕ был в слоте до вызова acquireSlot
+                // Это означает, что персонаж только что получил слот (новый слот или вытеснение другого персонажа)
+                const isNewSlot = !wasAlreadyInSlot;
                 
                 // Новый слот - загружаем кеш, если есть
                 if (isNewSlot) {
