@@ -748,7 +748,7 @@ async function saveSlotCache(slotId, filename, characterName) {
                     // Файл меньше минимального размера - считаем невалидным и удаляем
                     console.warn(`[KV Cache Manager] Файл ${filename} слишком мал (${fileSizeMB.toFixed(2)} МБ), удаляем как невалидный`);
                     await deleteFile(filename);
-                    showToast('error', `Файл кеша для ${characterName} слишком мал (${fileSizeMB.toFixed(2)} МБ) и был удален`);
+                    showToast('warning', `Файл кеша для ${characterName} слишком мал, не сохранён`);
                     return false;
                 }
             }
