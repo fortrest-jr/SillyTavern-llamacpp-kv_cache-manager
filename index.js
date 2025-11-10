@@ -25,6 +25,14 @@ const defaultSettings = {
 
 const extensionSettings = extension_settings[extensionName] ||= {};
 
+// Константы
+const MIN_USAGE_FOR_SAVE = 2; // Минимальное количество использований слота для сохранения кеша перед вытеснением
+const MIN_FILE_SIZE_MB = 1; // Минимальный размер файла кеша в МБ (файлы меньше этого размера считаются невалидными)
+const SAVE_TIMEOUT_MS = 300000; // Таймаут для сохранения кеша (5 минут)
+const LOAD_TIMEOUT_MS = 300000; // Таймаут для загрузки кеша (5 минут)
+const CLEAR_TIMEOUT_MS = 30000; // Таймаут для очистки кеша (30 секунд)
+const FILE_CHECK_DELAY_MS = 500; // Задержка перед проверкой размера файла после сохранения (мс)
+
 // Счетчик сообщений для каждого персонажа в каждом чата (для автосохранения)
 // Структура: { [chatId]: { [characterName]: count } }
 const messageCounters = {};
@@ -632,7 +640,6 @@ async function assignCharactersToSlots() {
             const usageCount = slot.usage || 0;
             
             // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
-            const MIN_USAGE_FOR_SAVE = 2;
             if (usageCount >= MIN_USAGE_FOR_SAVE) {
                 await saveCharacterCache(currentCharacter, i);
             } else {
@@ -804,7 +811,6 @@ async function acquireSlot(characterName) {
         const usageCount = evictedSlot.usage;
         
         // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
-        const MIN_USAGE_FOR_SAVE = 2;
         if (usageCount >= MIN_USAGE_FOR_SAVE) {
             await saveCharacterCache(evictedCharacter, minUsageIndex);
             // Уведомление о сохранении показывается внутри saveSlotCache
@@ -955,7 +961,7 @@ async function saveSlotCache(slotId, filename, characterName) {
     
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 минут таймаут
+        const timeoutId = setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS);
         
         const response = await fetch(url, {
             method: 'POST',
@@ -984,7 +990,7 @@ async function saveSlotCache(slotId, filename, characterName) {
         // Проверяем размер сохраненного файла
         try {
             // Ждем немного, чтобы файл точно был сохранен на сервере
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, FILE_CHECK_DELAY_MS));
             
             const filesList = await getFilesList();
             const savedFile = filesList.find(file => file.name === filename);
@@ -992,8 +998,8 @@ async function saveSlotCache(slotId, filename, characterName) {
             if (savedFile) {
                 const fileSizeMB = savedFile.size / (1024 * 1024); // Размер в мегабайтах
                 
-                if (fileSizeMB < 1) {
-                    // Файл меньше 1 МБ - считаем невалидным и удаляем
+                if (fileSizeMB < MIN_FILE_SIZE_MB) {
+                    // Файл меньше минимального размера - считаем невалидным и удаляем
                     console.warn(`[KV Cache Manager] Файл ${filename} слишком мал (${fileSizeMB.toFixed(2)} МБ), удаляем как невалидный`);
                     await deleteFile(filename);
                     showToast('error', `Файл кеша для ${characterName} слишком мал (${fileSizeMB.toFixed(2)} МБ) и был удален`);
@@ -1025,7 +1031,7 @@ async function loadSlotCache(slotId, filename) {
     const llamaUrl = getLlamaUrl();
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 минут таймаут
+        const timeoutId = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
         
         console.debug(`[KV Cache Manager] Загрузка кеша: слот ${slotId}, файл ${filename}`);
         
@@ -1080,7 +1086,7 @@ async function clearSlotCache(slotId) {
     
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 секунд таймаут
+        const timeoutId = setTimeout(() => controller.abort(), CLEAR_TIMEOUT_MS);
         
         const response = await fetch(url, {
             method: 'POST',
