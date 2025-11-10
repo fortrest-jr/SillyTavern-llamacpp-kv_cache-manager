@@ -14,8 +14,6 @@ const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const defaultSettings = {
     enabled: true,
     saveInterval: 5,
-    autoLoadOnChatSwitch: true,
-    autoLoadAskConfirmation: false,
     maxFiles: 10,
     showNotifications: true,
     checkSlotUsage: true
@@ -34,10 +32,6 @@ const FILE_CHECK_DELAY_MS = 500; // Задержка перед проверко
 // Счетчик сообщений для каждого персонажа в каждом чата (для автосохранения)
 // Структура: { [chatId]: { [characterName]: count } }
 const messageCounters = {};
-
-// ID последнего чата, для которого была выполнена автозагрузка
-// При входе в этот чат не предлагаем загружать снова
-let lastLoadedChatId = null;
 
 let currentSlot = null;
 let slotsState = [];
@@ -205,8 +199,6 @@ async function loadSettings() {
     $("#kv-cache-enabled").prop("checked", extensionSettings.enabled).trigger("input");
     $("#kv-cache-save-interval").val(extensionSettings.saveInterval).trigger("input");
     $("#kv-cache-max-files").val(extensionSettings.maxFiles).trigger("input");
-    $("#kv-cache-auto-load").prop("checked", extensionSettings.autoLoadOnChatSwitch).trigger("input");
-    $("#kv-cache-auto-load-ask").prop("checked", extensionSettings.autoLoadAskConfirmation).trigger("input");
     $("#kv-cache-show-notifications").prop("checked", extensionSettings.showNotifications).trigger("input");
     $("#kv-cache-validate").prop("checked", extensionSettings.checkSlotUsage).trigger("input");
     
@@ -263,18 +255,6 @@ function onSaveIntervalChange(event) {
 function onMaxFilesChange(event) {
     const value = parseInt($(event.target).val()) || 10;
     extensionSettings.maxFiles = value;
-    saveSettingsDebounced();
-}
-
-function onAutoLoadChange(event) {
-    const value = Boolean($(event.target).prop("checked"));
-    extensionSettings.autoLoadOnChatSwitch = value;
-    saveSettingsDebounced();
-}
-
-function onAutoLoadAskConfirmationChange(event) {
-    const value = Boolean($(event.target).prop("checked"));
-    extensionSettings.autoLoadAskConfirmation = value;
     saveSettingsDebounced();
 }
 
@@ -1740,29 +1720,6 @@ function updateLoadModalSelection() {
     }
 }
 
-// Получение последнего файла для чата
-async function getLastFileForChat(chatId) {
-    try {
-        const filesList = await getFilesList();
-        if (!filesList || filesList.length === 0) {
-            return null;
-        }
-        
-        const chats = groupFilesByChat(filesList);
-        const chatGroups = chats[chatId] || [];
-        
-        if (chatGroups.length === 0) {
-            return null;
-        }
-        
-        // Возвращаем самую новую группу (первая в отсортированном массиве)
-        return chatGroups[0];
-    } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при получении последнего файла для чата:', e);
-        return null;
-    }
-}
-
 // Получение последнего кеша для персонажа
 // @param {string} characterName - имя персонажа
 // @param {boolean} currentChatOnly - искать только в текущем чате (по умолчанию true)
@@ -1953,93 +1910,12 @@ async function loadFileGroup(group, chatId) {
     }
     
     if (loadedCount > 0) {
-        // Не запоминаем чат, так как очистка слотов при переключении чата всегда включена
-        lastLoadedChatId = null;
-        
         // Обновляем список слотов после загрузки
         setTimeout(() => updateSlotsList(), 1000);
         return true;
     } else {
         showToast('error', `Не удалось загрузить кеш. Ошибки: ${errors.join(', ')}`, 'Автозагрузка');
         return false;
-    }
-}
-
-// Модалка подтверждения автозагрузки
-let autoLoadConfirmModalData = null;
-
-function openAutoLoadConfirmModal(group, chatId, chatName) {
-    const modal = $("#kv-cache-auto-load-confirm-modal");
-    modal.css('display', 'flex');
-    
-    const dateTime = formatTimestampToDate(group.timestamp);
-    const slotsCount = group.files.length;
-    const tagLabel = group.tag ? ` [тег: ${group.tag}]` : '';
-    const characterLabel = group.characterName ? ` [персонаж: ${group.characterName}]` : '';
-    const label = tagLabel || characterLabel;
-    
-    $("#kv-cache-auto-load-confirm-info").html(`
-        Загрузить сохранение от <strong>${dateTime}${label}</strong> (${slotsCount} слот${slotsCount !== 1 ? 'ов' : ''}) для чата <strong>${chatName}</strong>?
-    `);
-    
-    autoLoadConfirmModalData = { group, chatId };
-}
-
-function closeAutoLoadConfirmModal() {
-    const modal = $("#kv-cache-auto-load-confirm-modal");
-    modal.css('display', 'none');
-    
-    // При отмене не записываем ничего - при следующем входе в чат снова предложим
-    autoLoadConfirmModalData = null;
-}
-
-async function confirmAutoLoad() {
-    if (!autoLoadConfirmModalData) {
-        return;
-    }
-    
-    const { group, chatId } = autoLoadConfirmModalData;
-    closeAutoLoadConfirmModal();
-    
-    showToast('info', 'Начинаю загрузку кеша...', 'Автозагрузка');
-    // Запоминание чата происходит в loadFileGroup при успешной загрузке
-    await loadFileGroup(group, chatId);
-}
-
-// Автозагрузка последнего файла при переключении чата
-async function tryAutoLoadOnChatSwitch(chatId) {
-    
-    // Не предлагаем автозагрузку для чата "unknown"
-    if (chatId === 'unknown' || !chatId) {
-        console.debug(`[KV Cache Manager] Пропускаем автозагрузку для чата "unknown"`);
-        return;
-    }
-    
-    // Проверяем, не загружали ли мы уже этот чат в текущей сессии
-    if (lastLoadedChatId === chatId) {
-        console.debug(`[KV Cache Manager] Чат ${chatId} уже загружался в этой сессии, пропускаем автозагрузку`);
-        return;
-    }
-    
-    // Получаем последний файл для чата
-    // Проверяем наличие файлов ДО показа модалки
-    const lastGroup = await getLastFileForChat(chatId);
-    
-    if (!lastGroup) {
-        console.debug(`[KV Cache Manager] Не найдено сохранений для чата ${chatId}`);
-        return;
-    }
-    
-    const rawChatId = getCurrentChatId() || chatId;
-    
-    // Если нужно подтверждение
-    if (extensionSettings.autoLoadAskConfirmation) {
-        openAutoLoadConfirmModal(lastGroup, chatId, rawChatId);
-    } else {
-        // Загружаем без подтверждения
-        showToast('info', 'Начинаю автозагрузку кеша...', 'Автозагрузка');
-        // Запоминание чата происходит в loadFileGroup при успешной загрузке
-        await loadFileGroup(lastGroup, chatId);
     }
 }
 
@@ -2255,10 +2131,6 @@ jQuery(async () => {
     // Загружаем HTML из файла
     const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
     $("#extensions_settings").append(settingsHtml);
-    
-    // Загружаем модалку подтверждения автозагрузки из файла
-    const autoLoadConfirmModalHtml = await $.get(`${extensionFolderPath}/auto-load-confirm-modal.html`);
-    $("body").append(autoLoadConfirmModalHtml);
 
     // Загружаем настройки при старте
     await loadSettings();
@@ -2391,8 +2263,6 @@ jQuery(async () => {
         
         // Очищаем все слоты перед переключением (всегда включено)
         await clearAllSlotsCache();
-        // Не запоминаем последний загруженный чат, так как кеш будет очищен
-        lastLoadedChatId = null;
         
         // Распределяем персонажей по слотам (групповой режим всегда включен)
         // Кеш загружается автоматически в assignCharactersToSlots для персонажей в слотах
@@ -2404,11 +2274,9 @@ jQuery(async () => {
     // Счетчик автоматически создается при первом сообщении в новом чате
 
     // Настраиваем обработчики событий
-    $("#kv-cache-auto-load-ask").on("input", onAutoLoadAskConfirmationChange);
     $("#kv-cache-enabled").on("input", onEnabledChange);
     $("#kv-cache-save-interval").on("input", onSaveIntervalChange);
     $("#kv-cache-max-files").on("input", onMaxFilesChange);
-    $("#kv-cache-auto-load").on("input", onAutoLoadChange);
     $("#kv-cache-show-notifications").on("input", onShowNotificationsChange);
     $("#kv-cache-validate").on("input", onValidateChange);
     
@@ -2461,20 +2329,6 @@ jQuery(async () => {
         if (e.key === "Escape" && $("#kv-cache-load-modal").is(":visible")) {
             closeLoadModal();
         }
-        if (e.key === "Escape" && $("#kv-cache-auto-load-confirm-modal").is(":visible")) {
-            closeAutoLoadConfirmModal();
-        }
     });
     
-    // Обработчики для модалки подтверждения автозагрузки
-    $(document).on("click", "#kv-cache-auto-load-confirm-modal-close", closeAutoLoadConfirmModal);
-    $(document).on("click", "#kv-cache-auto-load-confirm-cancel", closeAutoLoadConfirmModal);
-    $(document).on("click", "#kv-cache-auto-load-confirm-ok", confirmAutoLoad);
-    
-    // Закрытие модалки подтверждения по клику вне её области
-    $(document).on("click", "#kv-cache-auto-load-confirm-modal", function(e) {
-        if ($(e.target).is("#kv-cache-auto-load-confirm-modal")) {
-            closeAutoLoadConfirmModal();
-        }
-    });
 });
