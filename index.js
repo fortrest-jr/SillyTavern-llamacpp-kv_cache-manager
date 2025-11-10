@@ -99,36 +99,11 @@ function updateNextSaveIndicator() {
     }
 }
 
-// Сохранение кеша для конкретного персонажа
-async function saveCharacterCache(characterName, slotIndex) {
-    if (!characterName || slotIndex === null || slotIndex === undefined) {
-        return false;
-    }
-    
-    const chatId = getNormalizedChatId();
-    const timestamp = formatTimestamp();
-    const filename = generateSaveFilename(chatId, timestamp, characterName);
-    
-    console.debug(`[KV Cache Manager] Сохранение кеша для персонажа ${characterName} в слот ${slotIndex}`);
-    
-    const success = await saveSlotCache(slotIndex, filename);
-    
-    if (success) {
-        // Выполняем ротацию файлов для этого персонажа
-        await rotateCharacterFiles(characterName);
-        console.debug(`[KV Cache Manager] Кеш успешно сохранен для персонажа ${characterName}`);
-    }
-    
-    return success;
-}
-
-// Единая функция для сохранения кеша перед вытеснением персонажа из слота
-// Проверяет usageCount и сохраняет кеш только если персонаж использовал слот минимум 2 раза
+// Сохранение кеша для персонажа (автосохранение)
 // @param {string} characterName - имя персонажа
 // @param {number} slotIndex - индекс слота
-// @param {number} usageCount - количество использований слота
-// @returns {Promise<boolean>} - true если кеш был сохранен, false если пропущен или ошибка
-async function saveCacheBeforeEviction(characterName, slotIndex, usageCount = 0) {
+// @returns {Promise<boolean>} - true если кеш был сохранен, false если ошибка
+async function saveCharacterCache(characterName, slotIndex) {
     if (!characterName || typeof characterName !== 'string') {
         return false;
     }
@@ -137,33 +112,26 @@ async function saveCacheBeforeEviction(characterName, slotIndex, usageCount = 0)
         return false;
     }
     
-    // Сохраняем кеш только если персонаж использовал слот минимум 2 раза
-    const MIN_USAGE_FOR_SAVE = 2;
-    if (usageCount < MIN_USAGE_FOR_SAVE) {
-        console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${characterName} (использование: ${usageCount} < ${MIN_USAGE_FOR_SAVE})`);
-        return false;
-    }
-    
     try {
         const chatId = getNormalizedChatId();
         const timestamp = formatTimestamp();
         const filename = generateSaveFilename(chatId, timestamp, characterName);
         
-        console.debug(`[KV Cache Manager] Сохранение кеша перед вытеснением: персонаж ${characterName}, слот ${slotIndex}`);
+        console.debug(`[KV Cache Manager] Сохранение кеша для персонажа ${characterName} в слот ${slotIndex}`);
         
-        const success = await saveSlotCache(slotIndex, filename);
+        const success = await saveSlotCache(slotIndex, filename, characterName);
         
         if (success) {
-            console.debug(`[KV Cache Manager] Сохранен кеш вытесняемого персонажа ${characterName} в файл ${filename}`);
-            // Выполняем ротацию файлов для вытесняемого персонажа
+            // Выполняем ротацию файлов для этого персонажа
             await rotateCharacterFiles(characterName);
+            console.debug(`[KV Cache Manager] Кеш успешно сохранен для персонажа ${characterName}`);
             return true;
         } else {
-            console.error(`[KV Cache Manager] Не удалось сохранить кеш для вытесняемого персонажа ${characterName}`);
+            console.error(`[KV Cache Manager] Не удалось сохранить кеш для персонажа ${characterName}`);
             return false;
         }
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка при сохранении кеша вытесняемого персонажа ${characterName}:`, e);
+        console.error(`[KV Cache Manager] Ошибка при сохранении кеша для персонажа ${characterName}:`, e);
         return false;
     }
 }
@@ -663,8 +631,13 @@ async function assignCharactersToSlots() {
         if (currentCharacter && typeof currentCharacter === 'string') {
             const usageCount = slot.usage || 0;
             
-            // Используем единую функцию для сохранения кеша перед вытеснением
-            await saveCacheBeforeEviction(currentCharacter, i, usageCount);
+            // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
+            const MIN_USAGE_FOR_SAVE = 2;
+            if (usageCount >= MIN_USAGE_FOR_SAVE) {
+                await saveCharacterCache(currentCharacter, i);
+            } else {
+                console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${currentCharacter} (использование: ${usageCount} < ${MIN_USAGE_FOR_SAVE})`);
+            }
         }
     }
     
@@ -829,9 +802,15 @@ async function acquireSlot(characterName) {
     
     if (evictedCharacter && typeof evictedCharacter === 'string') {
         const usageCount = evictedSlot.usage;
-        await saveCacheBeforeEviction(evictedCharacter, minUsageIndex, usageCount);
         
-        showToast('success', `Кеш вытесняемого персонажа ${evictedCharacter} сохранен`, 'Получение слота');
+        // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
+        const MIN_USAGE_FOR_SAVE = 2;
+        if (usageCount >= MIN_USAGE_FOR_SAVE) {
+            await saveCharacterCache(evictedCharacter, minUsageIndex);
+            // Уведомление о сохранении показывается внутри saveSlotCache
+        } else {
+            console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${evictedCharacter} (использование: ${usageCount} < ${MIN_USAGE_FOR_SAVE})`);
+        }
     }
     
     // Устанавливаем персонажа в освобожденный слот
@@ -964,7 +943,10 @@ function updateSlotsAvailability() {
 }
 
 // Сохранение кеша для слота
-async function saveSlotCache(slotId, filename) {
+// @param {number} slotId - Индекс слота
+// @param {string} filename - Имя файла для сохранения
+// @param {string} characterName - Имя персонажа (обязательно)
+async function saveSlotCache(slotId, filename, characterName) {
     const llamaUrl = getLlamaUrl();
     const url = `${llamaUrl}slots/${slotId}?action=save`;
     const requestBody = { filename: filename };
@@ -991,16 +973,48 @@ async function saveSlotCache(slotId, filename) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}: ${response.status} ${errorText}`);
+            
+            showToast('error', `Не удалось сохранить кеш для ${characterName}`);
+            
             return false;
         }
         
         console.debug(`[KV Cache Manager] Кеш успешно сохранен для слота ${slotId}`);
+        
+        // Проверяем размер сохраненного файла
+        try {
+            // Ждем немного, чтобы файл точно был сохранен на сервере
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            const filesList = await getFilesList();
+            const savedFile = filesList.find(file => file.name === filename);
+            
+            if (savedFile) {
+                const fileSizeMB = savedFile.size / (1024 * 1024); // Размер в мегабайтах
+                
+                if (fileSizeMB < 1) {
+                    // Файл меньше 1 МБ - считаем невалидным и удаляем
+                    console.warn(`[KV Cache Manager] Файл ${filename} слишком мал (${fileSizeMB.toFixed(2)} МБ), удаляем как невалидный`);
+                    await deleteFile(filename);
+                    showToast('error', `Файл кеша для ${characterName} слишком мал (${fileSizeMB.toFixed(2)} МБ) и был удален`);
+                    return false;
+                }
+            }
+        } catch (e) {
+            console.warn(`[KV Cache Manager] Не удалось проверить размер файла ${filename}:`, e);
+            // Продолжаем, даже если не удалось проверить размер
+        }
+        
+        showToast('success', `Кеш для ${characterName} успешно сохранен`);
+        
         return true;
     } catch (e) {
         if (e.name === 'AbortError') {
             console.error(`[KV Cache Manager] Таймаут при сохранении кеша слота ${slotId}`);
+            showToast('error', `Таймаут при сохранении кеша для ${characterName}`);
         } else {
             console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}:`, e);
+            showToast('error', `Ошибка при сохранении кеша для ${characterName}: ${e.message}`);
         }
         return false;
     }
@@ -1310,7 +1324,6 @@ async function saveCache(requestTag = false) {
     console.debug(`[KV Cache Manager] Начинаю сохранение ${charactersToSave.length} персонажей:`, charactersToSave);
     
     const successfullySaved = []; // Список успешно сохраненных персонажей
-    const sizeErrors = []; // Список персонажей с проблемным размером файла (удалены)
     const saveErrors = []; // Список персонажей с проблемами сохранения
     
     // Сохраняем каждого персонажа с индивидуальным timestamp
@@ -1326,40 +1339,13 @@ async function saveCache(requestTag = false) {
             
             console.debug(`[KV Cache Manager] Сохранение персонажа ${characterName} в слот ${slotIndex} с именем файла: ${filename}`);
             
-            if (await saveSlotCache(slotIndex, filename)) {
-                // Проверяем размер сохраненного файла
-                let fileSizeValid = true;
-                try {
-                    // Ждем немного, чтобы файл точно был сохранен на сервере
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const filesList = await getFilesList();
-                    const savedFile = filesList.find(file => file.name === filename);
-                    
-                    if (savedFile) {
-                        const fileSizeMB = savedFile.size / (1024 * 1024); // Размер в мегабайтах
-                        
-                        if (fileSizeMB < 1) {
-                            // Файл меньше 1 МБ - считаем невалидным и удаляем
-                            console.warn(`[KV Cache Manager] Файл ${filename} слишком мал (${fileSizeMB.toFixed(2)} МБ), удаляем как невалидный`);
-                            await deleteFile(filename);
-                            sizeErrors.push(characterName);
-                            fileSizeValid = false;
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`[KV Cache Manager] Не удалось проверить размер файла ${filename}:`, e);
-                    // Продолжаем, даже если не удалось проверить размер
-                }
+            if (await saveSlotCache(slotIndex, filename, characterName)) {
+                successfullySaved.push(characterName);
+                console.debug(`[KV Cache Manager] Сохранен кеш для персонажа ${characterName}: ${filename}`);
                 
-                if (fileSizeValid) {
-                    successfullySaved.push(characterName);
-                    console.debug(`[KV Cache Manager] Сохранен кеш для персонажа ${characterName}: ${filename}`);
-                    
-                    // Выполняем ротацию файлов для этого персонажа (только для автосохранений)
-                    if (!tag) {
-                        await rotateCharacterFiles(characterName);
-                    }
+                // Выполняем ротацию файлов для этого персонажа (только для автосохранений)
+                if (!tag) {
+                    await rotateCharacterFiles(characterName);
                 }
             } else {
                 saveErrors.push(characterName);
@@ -1370,37 +1356,13 @@ async function saveCache(requestTag = false) {
         }
     }
     
-    // Показываем уведомления в правильном порядке
-    
-    // 1. Если есть успешно сохраненные - показываем success тост
-    if (successfullySaved.length > 0) {
-        const charactersList = successfullySaved.join(', ');
-        if (!tag) {
-            showToast('success', `Автосохранено ${successfullySaved.length} персонажей: ${charactersList}`, 'Автосохранение');
-        } else {
-            showToast('success', `Сохранено ${successfullySaved.length} персонажей: ${charactersList}`);
-        }
-        
-        // Обновляем индикатор после автосохранения
-        if (!tag) {
-            updateNextSaveIndicator();
-        }
-    }
-    
-    // 2. Если есть проблемы с размером файла - показываем warning тост
-    if (sizeErrors.length > 0) {
-        const sizeErrorsList = sizeErrors.join(', ');
-        showToast('warning', `Удалены невалидные файлы (слишком малы) для ${sizeErrors.length} персонажей: ${sizeErrorsList}`, 'Проблема с размером файла');
-    }
-    
-    // 3. Если есть проблемы с сохранением - показываем error тост
-    if (saveErrors.length > 0) {
-        const saveErrorsList = saveErrors.join(', ');
-        showToast('error', `Не удалось сохранить кеш для ${saveErrors.length} персонажей: ${saveErrorsList}`, 'Ошибка сохранения');
+    // Обновляем индикатор после автосохранения
+    if (!tag && successfullySaved.length > 0) {
+        updateNextSaveIndicator();
     }
     
     // Обновляем список слотов после сохранения
-    if (successfullySaved.length > 0 || sizeErrors.length > 0 || saveErrors.length > 0) {
+    if (successfullySaved.length > 0 || saveErrors.length > 0) {
         setTimeout(() => updateSlotsList(), 1000);
     }
     
