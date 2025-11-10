@@ -2,7 +2,7 @@
 // Расширение для управления KV-кешем llama.cpp
 
 // Импортируем необходимые функции
-import { extension_settings, getContext, loadExtensionSettings } from "../../../extensions.js";
+import { extension_settings, getContext } from "../../../extensions.js";
 import { saveSettingsDebounced, eventSource, event_types, getCurrentChatId, characters } from "../../../../script.js";
 import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
 import { getGroupMembers } from '../../../group-chats.js';
@@ -469,40 +469,6 @@ async function getAllSlotsInfo() {
     return null;
 }
 
-// Проверка валидности слота (есть ли в нем данные)
-function slotUsed(slotInfo) {
-    if (!slotInfo || typeof slotInfo !== 'object') {
-        return false;
-    }
-    
-    // Слот использован, если есть параметр id_task
-    return 'id_task' in slotInfo && slotInfo.id_task != null;
-}
-
-// Получение всех активных слотов с проверкой валидности
-async function getActiveSlots() {
-    const slotsArray = await getAllSlotsInfo();
-    
-    if (!slotsArray) {
-        console.debug('[KV Cache Manager] Не удалось получить информацию о слотах');
-        return [];
-    }
-    
-    if (!extensionSettings.checkSlotUsage) {
-        return Array.from({ length: slotsArray.length }, (_, i) => i);
-    }
-    
-    // Фильтруем валидные слоты
-    const validSlots = [];
-    slotsArray.forEach((slotInfo, index) => {
-        if (slotUsed(slotInfo)) {
-            validSlots.push(index);
-        }
-    });
-    
-    return validSlots;
-}
-
 // Создание объекта пустого слота
 function createEmptySlot() {
     return {
@@ -588,52 +554,6 @@ async function assignCharactersToSlots() {
     
     // Обновляем UI
     updateSlotsList();
-}
-
-// Загрузка кеша для персонажей, которые распределены в слоты
-async function loadCacheForSlottedCharacters() {    
-    // Получаем список персонажей из слотов (только тех, кто реально в слотах)
-    const slottedCharacters = slotsState
-        .map((slot, index) => ({ characterName: slot?.characterName, slotIndex: index }))
-        .filter(item => item.characterName && typeof item.characterName === 'string');
-    
-    if (slottedCharacters.length === 0) {
-        console.debug('[KV Cache Manager] Нет персонажей в слотах для загрузки кеша');
-        return;
-    }
-    
-    // Загружаем кеш для каждого персонажа, который в слотах
-    for (const { characterName, slotIndex } of slottedCharacters) {
-        
-        try {
-            const cacheInfo = await getLastCacheForCharacter(characterName, true); // Только из текущего чата
-            
-            if (cacheInfo) {
-                console.debug(`[KV Cache Manager] Загружаю кеш для персонажа ${characterName} в слот ${slotIndex}...`);
-                const loaded = await loadSlotCache(slotIndex, cacheInfo.filename);
-                
-                if (loaded) {
-                    // Форматируем дату-время из timestamp для тоста
-                    const parsed = parseSaveFilename(cacheInfo.filename);
-                    if (parsed && parsed.timestamp) {
-                        const dateTimeStr = formatTimestampToDate(parsed.timestamp);
-                        
-                        // Выводим тост для каждого успешно загруженного персонажа
-                        if (extensionSettings.showNotifications) {
-                            showToast('success', `Загружен кеш для ${characterName} (${dateTimeStr})`, 'Загрузка кеша');
-                        }
-                    }
-                    console.debug(`[KV Cache Manager] Кеш персонажа ${characterName} успешно загружен в слот ${slotIndex}`);
-                } else {
-                    console.warn(`[KV Cache Manager] Не удалось загрузить кеш для персонажа ${characterName}`);
-                }
-            } else {
-                console.debug(`[KV Cache Manager] Кеш для персонажа ${characterName} не найден`);
-            }
-        } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${characterName}:`, e);
-        }
-    }
 }
 
 // Поиск индекса слота для персонажа (если персонаж уже в слоте)
@@ -1049,54 +969,6 @@ async function getFilesList() {
     }
 }
 
-// Группировка файлов по чатам, внутри каждого чата - по timestamp
-// Возвращает объект: { [chatId]: [{ timestamp, tag, characterName, files }, ...] }
-function groupFilesByChat(files) {
-    const chats = {};
-    
-    // Парсим файлы один раз
-    const parsedFiles = parseFilesList(files);
-    
-    for (const file of parsedFiles) {
-        if (!file.parsed) {
-            // Если не удалось распарсить, пропускаем этот файл
-            console.warn('[KV Cache Manager] Не удалось распарсить имя файла:', file.name);
-            continue;
-        }
-        
-        const chatId = file.parsed.chatId;
-        if (!chats[chatId]) {
-            chats[chatId] = [];
-        }
-        
-        // Ищем существующую группу с таким timestamp в этом чате
-        let group = chats[chatId].find(g => g.timestamp === file.parsed.timestamp);
-        if (!group) {
-            group = {
-                chatId: chatId,
-                timestamp: file.parsed.timestamp,
-                tag: file.parsed.tag || null,
-                characterName: file.parsed.characterName || null,
-                files: []
-            };
-            chats[chatId].push(group);
-        }
-        
-        // Сохраняем объект файла с именем и размером
-        group.files.push({
-            name: file.name,
-            size: file.size || 0
-        });
-    }
-    
-    // Сортируем файлы внутри каждого чата от новых к старым (по timestamp)
-    for (const chatId in chats) {
-        sortByTimestamp(chats[chatId]);
-    }
-    
-    return chats;
-}
-
 // Общая функция сохранения кеша
 // Сохраняет всех персонажей, которые находятся в слотах
 async function saveCache(requestTag = false) {
@@ -1325,22 +1197,6 @@ async function rotateCharacterFiles(characterName) {
         },
         `для персонажа ${characterName} в чате ${chatId}`,
         `для ${characterName}`
-    );
-}
-
-// Ротация файлов: удаление старых автосохранений для текущего чата (старая функция, оставлена для обратной совместимости)
-async function rotateAutoSaveFiles() {
-    const chatId = getNormalizedChatId();
-    
-    await rotateFiles(
-        (file) => {
-            return file.parsed && 
-                   file.parsed.chatId === chatId && 
-                   !file.parsed.tag && 
-                   !file.parsed.characterName; // Только автосохранения (без тега и без имени персонажа)
-        },
-        `для чата ${chatId}`,
-        ''
     );
 }
 
