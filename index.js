@@ -546,25 +546,13 @@ function slotUsed(slotInfo) {
 
 // Получение всех активных слотов с проверкой валидности
 async function getActiveSlots() {
-    const slotsData = await getAllSlotsInfo();
+    const slotsArray = await getAllSlotsInfo();
     
-    if (!slotsData) {
+    if (!slotsArray) {
         console.debug('[KV Cache Manager] Не удалось получить информацию о слотах');
         return [];
     }
     
-    // Обрабатываем разные форматы ответа
-    let slotsArray = [];
-    
-    if (Array.isArray(slotsData)) {
-        // Если это массив слотов
-        slotsArray = slotsData;
-    } else if (typeof slotsData === 'object') {
-        // Если это объект, преобразуем в массив
-        slotsArray = Object.values(slotsData);
-    }
-    
-    // Если проверка отключена, возвращаем все слоты
     if (!extensionSettings.checkSlotUsage) {
         return Array.from({ length: slotsArray.length }, (_, i) => i);
     }
