@@ -1052,14 +1052,6 @@ async function loadSlotCache(slotId, filename) {
             return false;
         }
         
-        // Читаем тело ответа, чтобы убедиться, что операция полностью завершена
-        try {
-            const responseText = await response.text();
-            showToast('info', `[KV Cache Manager] Ответ сервера при загрузке кеша: ${responseText}`, 'Генерация');
-        } catch (e) {
-            console.warn(`[KV Cache Manager] Не удалось прочитать ответ сервера при загрузке кеша:`, e);
-        }
-        
         // При любой загрузке кеша сбрасываем счетчик использования в 0
         if (extensionSettings.groupChatMode && currentSlots && slotId !== null && slotId !== undefined && currentSlots[slotId]) {
             currentSlots[slotId].usage = 0;
