@@ -20,7 +20,7 @@ const defaultSettings = {
     showNotifications: true,
     checkSlotUsage: true,
     clearSlotsOnChatSwitch: true,
-    groupChatMode: false
+    groupChatMode: true
 };
 
 const extensionSettings = extension_settings[extensionName] ||= {};
@@ -228,6 +228,10 @@ async function loadSettings() {
             extensionSettings[key] = defaultSettings[key];
         }
     }
+    // Устанавливаем значения по умолчанию для всегда включенных функций
+    extensionSettings.clearSlotsOnChatSwitch = true;
+    extensionSettings.groupChatMode = true;
+    
     $("#kv-cache-enabled").prop("checked", extensionSettings.enabled).trigger("input");
     $("#kv-cache-save-interval").val(extensionSettings.saveInterval).trigger("input");
     $("#kv-cache-max-files").val(extensionSettings.maxFiles).trigger("input");
@@ -235,8 +239,6 @@ async function loadSettings() {
     $("#kv-cache-auto-load-ask").prop("checked", extensionSettings.autoLoadAskConfirmation).trigger("input");
     $("#kv-cache-show-notifications").prop("checked", extensionSettings.showNotifications).trigger("input");
     $("#kv-cache-validate").prop("checked", extensionSettings.checkSlotUsage).trigger("input");
-    $("#kv-cache-clear-slots").prop("checked", extensionSettings.clearSlotsOnChatSwitch).trigger("input");
-    $("#kv-cache-group-chat-mode").prop("checked", extensionSettings.groupChatMode).trigger("input");
     
     // Обновляем индикатор следующего сохранения
     updateNextSaveIndicator();
@@ -319,22 +321,6 @@ function onValidateChange(event) {
     saveSettingsDebounced();
 }
 
-function onClearSlotsChange(event) {
-    const value = Boolean($(event.target).prop("checked"));
-    extensionSettings.clearSlotsOnChatSwitch = value;
-    saveSettingsDebounced();
-}
-
-function onGroupChatModeChange(event) {
-    const value = Boolean($(event.target).prop("checked"));
-    extensionSettings.groupChatMode = value;
-    saveSettingsDebounced();
-    if (value) {
-        // Распределяем персонажей по слотам при включении режима
-        // Инициализация слотов произойдет автоматически в assignCharactersToSlots, если слоты еще не инициализированы
-        assignCharactersToSlots();
-    }
-}
 
 // Получение URL llama.cpp сервера
 function getLlamaUrl() {
@@ -1047,7 +1033,7 @@ async function clearSlotCache(slotId) {
 }
 
 // Очистка всех слотов
-async function clearAllSlots() {
+async function clearAllSlotsCache() {
     const llamaUrl = getLlamaUrl();
     
     try {
@@ -2535,26 +2521,14 @@ jQuery(async () => {
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         const currentChatId = getNormalizedChatId();
         
-        // Если включена очистка слотов при переключении чата
-        if (extensionSettings.clearSlotsOnChatSwitch) {
-            // Очищаем все слоты перед переключением
-            await clearAllSlots();
-            // Не запоминаем последний загруженный чат, так как кеш будет очищен
-            lastLoadedChatId = null;
-        }
+        // Очищаем все слоты перед переключением (всегда включено)
+        await clearAllSlotsCache();
+        // Не запоминаем последний загруженный чат, так как кеш будет очищен
+        lastLoadedChatId = null;
         
-        // Если включен режим групповых чатов, распределяем персонажей по слотам
+        // Распределяем персонажей по слотам (групповой режим всегда включен)
         // Кеш загружается автоматически в assignCharactersToSlots для персонажей в слотах
-        if (extensionSettings.groupChatMode) {
-            await assignCharactersToSlots();
-        } else {
-            // В обычном режиме проверяем автозагрузку
-            if (extensionSettings.autoLoadOnChatSwitch) {
-                setTimeout(async () => {
-                    await tryAutoLoadOnChatSwitch(currentChatId);
-                }, 500);
-            }
-        }
+        await assignCharactersToSlots();
         
     });
     
@@ -2569,8 +2543,6 @@ jQuery(async () => {
     $("#kv-cache-auto-load").on("input", onAutoLoadChange);
     $("#kv-cache-show-notifications").on("input", onShowNotificationsChange);
     $("#kv-cache-validate").on("input", onValidateChange);
-    $("#kv-cache-clear-slots").on("input", onClearSlotsChange);
-    $("#kv-cache-group-chat-mode").on("input", onGroupChatModeChange);
     
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
