@@ -15,8 +15,7 @@ const defaultSettings = {
     enabled: true,
     saveInterval: 5,
     maxFiles: 10,
-    showNotifications: true,
-    checkSlotUsage: true
+    showNotifications: true
 };
 
 const extensionSettings = extension_settings[extensionName] ||= {};
@@ -200,7 +199,6 @@ async function loadSettings() {
     $("#kv-cache-save-interval").val(extensionSettings.saveInterval).trigger("input");
     $("#kv-cache-max-files").val(extensionSettings.maxFiles).trigger("input");
     $("#kv-cache-show-notifications").prop("checked", extensionSettings.showNotifications).trigger("input");
-    $("#kv-cache-validate").prop("checked", extensionSettings.checkSlotUsage).trigger("input");
     
     // Обновляем индикатор следующего сохранения
     updateNextSaveIndicator();
@@ -263,12 +261,6 @@ function onShowNotificationsChange(event) {
     extensionSettings.showNotifications = value;
     saveSettingsDebounced();
     showToast('success', `Уведомления ${value ? 'включены' : 'отключены'}`);
-}
-
-function onValidateChange(event) {
-    const value = Boolean($(event.target).prop("checked"));
-    extensionSettings.checkSlotUsage = value;
-    saveSettingsDebounced();
 }
 
 
@@ -1223,15 +1215,6 @@ function formatTimestampToDate(timestamp) {
     return `${dateStr} ${timeStr}`;
 }
 
-// Форматирование размера файла
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-}
-
 // Парсинг списка файлов с добавлением распарсенных данных
 // Возвращает массив файлов с добавленным полем parsed
 // @param {Array} files - массив файлов (объекты с полем name или строки)
@@ -1656,125 +1639,6 @@ async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
     }
 }
 
-// Загрузка группы файлов (используется и для автозагрузки, и для ручной загрузки)
-async function loadFileGroup(group, chatId) {
-    if (!group || !group.files || group.files.length === 0) {
-        return false;
-    }
-    
-    // Подготавливаем файлы для загрузки
-    const filesToLoad = [];
-    for (const file of group.files) {
-        const filename = file.name;
-        const parsed = parseSaveFilename(filename);
-        
-        if (!parsed) {
-            console.warn('[KV Cache Manager] Не удалось распарсить имя файла для загрузки:', filename);
-            continue;
-        }
-        
-        // Файл должен иметь characterName
-        if (!parsed.characterName) {
-            console.warn(`[KV Cache Manager] Файл ${filename} не содержит имя персонажа, пропускаем`);
-            continue;
-        }
-        
-        // Загружаем кеш для персонажей, используя существующие слоты или выделяя новые
-        // Проверяем, есть ли персонаж в слотах (сравниваем нормализованные имена)
-        const parsedNormalizedName = normalizeCharacterName(parsed.characterName || '');
-        let slotIndex = slotsState.findIndex(slot => {
-            const slotName = slot?.characterName;
-            return slotName && normalizeCharacterName(slotName) === parsedNormalizedName;
-        });
-        
-        if (slotIndex !== -1) {
-            // Персонаж уже в слотах - загружаем кеш в существующий слот
-            console.debug(`[KV Cache Manager] Персонаж ${parsed.characterName} уже в слоте ${slotIndex}, загружаю кеш`);
-        } else {
-            // Персонаж не в слотах - выделяем новый слот по общей логике (ручная загрузка, не генерация - счетчик = 0)
-            console.debug(`[KV Cache Manager] Персонаж ${parsed.characterName} не в слотах, выделяю новый слот для загрузки кеша`);
-            slotIndex = await acquireSlot(parsed.characterName);
-            
-            if (slotIndex === null) {
-                console.warn(`[KV Cache Manager] Не удалось получить слот для персонажа ${parsed.characterName}, пропускаем загрузку кеша`);
-                continue;
-            }
-        }
-        
-        // Счетчик будет сброшен в 0 в loadSlotCache при загрузке кеша
-        // Сохраняем распарсенные данные, чтобы не парсить повторно
-        filesToLoad.push({
-            filename: filename,
-            slotId: slotIndex,
-            characterName: parsed.characterName,
-            timestamp: parsed.timestamp,
-            parsed: parsed // Сохраняем распарсенные данные
-        });
-    }
-    
-    if (filesToLoad.length === 0) {
-        console.warn('[KV Cache Manager] Нет файлов для загрузки после обработки');
-        return false;
-    }
-    
-    console.debug(`[KV Cache Manager] Начинаю загрузку ${filesToLoad.length} файлов:`, filesToLoad);
-    
-    let loadedCount = 0;
-    let errors = [];
-    const successfullyLoaded = []; // Список успешно загруженных персонажей с датой-временем
-    
-    for (const { filename, slotId, characterName, timestamp, parsed: fileParsed } of filesToLoad) {
-        if (slotId === null || slotId === undefined) {
-            errors.push(`слот null (файл: ${filename})`);
-            continue;
-        }
-        
-        try {
-            if (await loadSlotCache(slotId, filename)) {
-                loadedCount++;
-                console.debug(`[KV Cache Manager] Загружен кеш для слота ${slotId} из файла ${filename}`);
-                
-                // Используем уже распарсенные данные, если они есть, иначе парсим
-                const parsed = fileParsed || parseSaveFilename(filename);
-                
-                // Форматируем дату-время из timestamp для тоста
-                let dateTimeStr = '';
-                if (timestamp) {
-                    dateTimeStr = formatTimestampToDate(timestamp);
-                } else if (parsed && parsed.timestamp) {
-                    dateTimeStr = formatTimestampToDate(parsed.timestamp);
-                }
-                
-                const displayName = characterName || `слот ${slotId}`;
-                const dateTimeLabel = dateTimeStr ? ` (${dateTimeStr})` : '';
-                
-                // Показываем информацию о чате, если кеш загружен из другого чата
-                const currentChatId = getNormalizedChatId();
-                const cacheChatId = parsed?.chatId;
-                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
-                
-                successfullyLoaded.push({ name: displayName, dateTime: dateTimeStr });
-                
-                showToast('success', `Загружен кеш для ${displayName} ${dateTimeLabel}${chatInfo}`, 'Загрузка кеша');
-            } else {
-                errors.push(characterName || `слот ${slotId}`);
-            }
-        } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при загрузке слота ${slotId}:`, e);
-            errors.push(characterName ? `${characterName}: ${e.message}` : `слот ${slotId}: ${e.message}`);
-        }
-    }
-    
-    if (loadedCount > 0) {
-        // Обновляем список слотов после загрузки
-        setTimeout(() => updateSlotsList(), 1000);
-        return true;
-    } else {
-        showToast('error', `Не удалось загрузить кеш. Ошибки: ${errors.join(', ')}`, 'Автозагрузка');
-        return false;
-    }
-}
-
 // Загрузка выбранного кеша
 async function loadSelectedCache() {
     const selectedCharacters = loadModalData.selectedCharacters;
@@ -2090,17 +1954,10 @@ jQuery(async () => {
                 console.debug(`[KV Cache Manager] Счетчик использования для персонажа ${characterName} в слоте ${currentSlot} увеличен до: ${slotsState[currentSlot].usage}`);
             }
             
-            // Логируем завершение интерсептора для отладки
-            const finalCharacterName = characterName || 'неизвестный';
-            const finalSlot = currentSlot !== null ? currentSlot : 'неизвестный';
-            showToast('info', `[KV Cache Manager] Интерсептор генерации завершен для персонажа ${finalCharacterName}, слот ${finalSlot}`, 'Генерация');
         } catch (error) {
             console.error('[KV Cache Manager] Ошибка в перехватчике генерации:', error);
             showToast('error', `Ошибка при перехвате генерации: ${error.message}`, 'Генерация');
         }
-        
-        // Финальное логирование - интерсептор полностью завершен
-        showToast('info', `[KV Cache Manager] Интерсептор генерации полностью завершен, генерация может продолжиться`, 'Генерация');
     }
     
     // Регистрируем функцию-перехватчик в глобальном объекте
@@ -2134,7 +1991,6 @@ jQuery(async () => {
     $("#kv-cache-save-interval").on("input", onSaveIntervalChange);
     $("#kv-cache-max-files").on("input", onMaxFilesChange);
     $("#kv-cache-show-notifications").on("input", onShowNotificationsChange);
-    $("#kv-cache-validate").on("input", onValidateChange);
     
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
