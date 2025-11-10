@@ -814,21 +814,6 @@ async function acquireSlot(characterName) {
     return minUsageIndex;
 }
 
-// Освобождение слота
-function releaseSlot(slotIndex) {
-    if (!extensionSettings.groupChatMode) {
-        return;
-    }
-    
-    const slot = currentSlots[slotIndex];
-    const characterName = slot?.characterName;
-    currentSlots[slotIndex] = createEmptySlot();
-    
-    console.debug(`[KV Cache Manager] Освобожден слот ${slotIndex} (персонаж: ${characterName})`);
-    
-    updateSlotsList();
-}
-
 // Обновление UI с информацией о слотах
 // Обновление списка слотов в UI (объединенный виджет)
 async function updateSlotsList() {
@@ -1310,11 +1295,6 @@ async function saveCache(requestTag = false) {
     // Обновляем индикатор после автосохранения
     if (!tag && successfullySaved.length > 0) {
         updateNextSaveIndicator();
-    }
-    
-    // Обновляем список слотов после сохранения
-    if (successfullySaved.length > 0 || saveErrors.length > 0) {
-        setTimeout(() => updateSlotsList(), 1000);
     }
     
     // Возвращаем true при успешном сохранении (хотя бы один персонаж сохранен)
@@ -2426,7 +2406,6 @@ jQuery(async () => {
     loadSettings();
     initializeSlots();
     assignCharactersToSlots();
-    updateSlotsList();
     
     // Инициализируем счетчик для текущего чата
     const initialChatId = getNormalizedChatId();
