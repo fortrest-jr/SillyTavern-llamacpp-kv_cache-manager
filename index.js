@@ -242,7 +242,7 @@ async function loadSettings() {
     updateNextSaveIndicator();
     
     // Обновляем информацию о слотах
-    updateSlotsAvailability();
+    updateSlotsList();
 }
 
 // Показ toast-уведомления
@@ -611,7 +611,7 @@ async function initializeSlots(totalSlots = null) {
     console.debug(`[KV Cache Manager] Инициализировано ${totalSlots} слотов для режима групповых чатов`);
     
     // Обновляем UI
-    updateSlotsAvailability();
+    updateSlotsList();
 }
 
 // Распределение персонажей по слотам из текущего чата
@@ -658,7 +658,7 @@ async function assignCharactersToSlots() {
     
     if (chatCharacters.length === 0) {
         console.debug('[KV Cache Manager] Не найдено персонажей в текущем чате для распределения по слотам');
-        updateSlotsAvailability();
+        updateSlotsList();
         return;
     }
     
@@ -679,7 +679,7 @@ async function assignCharactersToSlots() {
     await loadCacheForSlottedCharacters();
     
     // Обновляем UI
-    updateSlotsAvailability();
+    updateSlotsList();
 }
 
 // Загрузка кеша для персонажей, которые распределены в слоты
@@ -768,7 +768,7 @@ async function acquireSlot(characterName) {
     if (existingIndex !== null) {
         // Персонаж уже в слоте - возвращаем существующий слот
         console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${existingIndex}, счетчик: ${currentSlots[existingIndex].usage || 0}`);
-        updateSlotsAvailability();
+        updateSlotsList();
         return existingIndex;
     }
     
@@ -782,7 +782,7 @@ async function acquireSlot(characterName) {
             usage: 0
         };
         console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в пустой слот ${freeSlotIndex}, счетчик: ${currentSlots[freeSlotIndex].usage}`);
-        updateSlotsAvailability();
+        updateSlotsList();
         return freeSlotIndex;
     }
     
@@ -829,7 +829,7 @@ async function acquireSlot(characterName) {
     
     console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в слот ${minUsageIndex}${evictedCharacter ? ` (вытеснен ${evictedCharacter}, использование: ${minUsage})` : ' (свободный слот)'}, счетчик: ${currentSlots[minUsageIndex].usage}`);
     
-    updateSlotsAvailability();
+    updateSlotsList();
     
     return minUsageIndex;
 }
@@ -849,7 +849,7 @@ function releaseSlot(slotIndex) {
     
     console.debug(`[KV Cache Manager] Освобожден слот ${slotIndex} (персонаж: ${characterName})`);
     
-    updateSlotsAvailability();
+    updateSlotsList();
 }
 
 // Освобождение всех слотов
@@ -868,7 +868,7 @@ function releaseAllSlots() {
     
     console.debug(`[KV Cache Manager] Освобождены все слоты`);
     
-    updateSlotsAvailability();
+    updateSlotsList();
 }
 
 // Обновление UI с информацией о слотах
@@ -940,12 +940,6 @@ async function updateSlotsList() {
         const errorMessage = e.message || 'Неизвестная ошибка';
         slotsListElement.html(`<p style="color: var(--SmartThemeBodyColor, inherit);">Ошибка загрузки слотов: ${errorMessage}</p>`);
     }
-}
-
-// Обновление статуса слотов (для обратной совместимости, теперь вызывает updateSlotsList)
-function updateSlotsAvailability() {
-    // Обновляем объединенный список слотов
-    updateSlotsList();
 }
 
 // Сохранение кеша для слота
@@ -2448,7 +2442,7 @@ async function preloadAllGroupCharacters() {
     }
     
     // Обновляем UI
-    updateSlotsAvailability();
+    updateSlotsList();
     
     // Показываем результат
     if (loadedCount > 0) {
