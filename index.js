@@ -330,10 +330,9 @@ function onGroupChatModeChange(event) {
     extensionSettings.groupChatMode = value;
     saveSettingsDebounced();
     if (value) {
-        // Инициализируем слоты и распределяем персонажей при включении режима
-        initializeSlots().then(() => {
-            assignCharactersToSlots();
-        });
+        // Распределяем персонажей по слотам при включении режима
+        // Инициализация слотов произойдет автоматически в assignCharactersToSlots, если слоты еще не инициализированы
+        assignCharactersToSlots();
     }
 }
 
@@ -577,12 +576,7 @@ async function initializeSlots(totalSlots = null) {
     // Если количество слотов не указано, получаем его с сервера
     if (totalSlots === null) {
         const slotsData = await getAllSlotsInfo();
-        if (slotsData) {
-            totalSlots = getSlotsCountFromData(slotsData);
-        } else {
-            console.warn('[KV Cache Manager] Не удалось получить количество слотов, используем значение по умолчанию');
-            totalSlots = 2;
-        }
+        totalSlots = getSlotsCountFromData(slotsData) || 4;
     }
     
     // Инициализируем массив объектов состояния слотов
@@ -611,11 +605,6 @@ async function assignCharactersToSlots() {
     
     // Получаем персонажей текущего чата
     const chatCharacters = await getChatCharacters();
-    
-    // Инициализируем слоты, если еще не инициализированы
-    if (!currentSlots || currentSlots.length === 0) {
-        await initializeSlots();
-    }
     
     const totalSlots = currentSlots.length;
     
@@ -1998,13 +1987,6 @@ async function loadFileGroup(group, chatId) {
         return false;
     }
     
-    // Инициализируем слоты, если режим групповых чатов включен
-    if (extensionSettings.groupChatMode) {
-        if (!currentSlots || currentSlots.length === 0) {
-            await initializeSlots();
-        }
-    }
-    
     // Подготавливаем файлы для загрузки
     const filesToLoad = [];
     for (const file of group.files) {
@@ -2238,13 +2220,8 @@ async function loadSelectedCache() {
     let loadedCount = 0;
     let errors = [];
     
-    // Инициализируем слоты, если режим групповых чатов включен
+    // Проверяем, что не выбрано больше персонажей, чем доступно слотов
     if (extensionSettings.groupChatMode) {
-        if (!currentSlots || currentSlots.length === 0) {
-            await initializeSlots();
-        }
-        
-        // Проверяем, что не выбрано больше персонажей, чем доступно слотов
         const selectedCount = Object.keys(selectedCharacters).length;
         const totalSlots = currentSlots.length;
         
@@ -2378,11 +2355,6 @@ async function preloadAllGroupCharacters() {
     let loadedCount = 0;
     let errors = [];
     
-    // Инициализируем слоты, если еще не инициализированы
-    if (!currentSlots || currentSlots.length === 0) {
-        await initializeSlots();
-    }
-    
     for (const character of characters) {
         if (!character || !character.name) {
             continue;
@@ -2470,6 +2442,8 @@ jQuery(async () => {
 
     // Загружаем настройки при старте
     loadSettings();
+    initializeSlots();
+    assignCharactersToSlots();
     updateSlotsList();
     
     // Инициализируем счетчик для текущего чата
@@ -2478,22 +2452,6 @@ jQuery(async () => {
         messageCounters[initialChatId] = 0;
     }
     updateNextSaveIndicator();
-    
-    // Считываем все файлы при загрузке через API плагина (для проверки доступности)
-    try {
-        const filesList = await getFilesList();
-        console.debug(`[KV Cache Manager] При загрузке найдено ${filesList.length} файлов сохранений`);
-    } catch (e) {
-        console.debug('[KV Cache Manager] Не удалось получить список файлов при загрузке (возможно, API плагина недоступен):', e);
-    }
-    
-    // Инициализация слотов при готовности приложения
-    eventSource.on(event_types.APP_READY, async () => {
-        if (extensionSettings.groupChatMode) {
-            await initializeSlots();
-            await assignCharactersToSlots();
-        }
-    });
     
     // Обновляем список слотов при запуске генерации
     eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, async (data) => {
