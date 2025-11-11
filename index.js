@@ -6,6 +6,7 @@ import { extension_settings, getContext } from "../../../extensions.js";
 import { saveSettingsDebounced, eventSource, event_types, getCurrentChatId, characters } from "../../../../script.js";
 import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
 import { getGroupMembers } from '../../../group-chats.js';
+import HttpClient from './http-client.js';
 
 // Имя расширения должно совпадать с именем папки
 const extensionName = "kv_cache-manager";
@@ -19,6 +20,9 @@ const defaultSettings = {
 };
 
 const extensionSettings = extension_settings[extensionName] ||= {};
+
+// Инициализация HTTP-клиента
+const httpClient = new HttpClient();
 
 // Константы
 const MIN_USAGE_FOR_SAVE = 2; // Минимальное количество использований слота для сохранения кеша перед вытеснением
@@ -435,30 +439,17 @@ function parseSaveFilename(filename) {
 // Получение информации о всех слотах через /slots
 async function getAllSlotsInfo() {
     const llamaUrl = getLlamaUrl();
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
-        
-        const response = await fetch(`${llamaUrl}slots`, {
-            method: 'GET',
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-            const slotsData = await response.json();
-            return slotsData;
-        }
-    } catch (e) {
-        if (e.name !== 'AbortError') {
-            console.debug('[KV Cache Manager] Ошибка получения информации о слотах:', e);
-            const errorMessage = e.message || String(e);
-            showToast('error', `Ошибка получения информации о слотах: ${errorMessage}`);
-        }
-    }
+    const url = `${llamaUrl}slots`;
     
-    return null;
+    try {
+        const slotsData = await httpClient.get(url);
+        return slotsData;
+    } catch (e) {
+        console.debug('[KV Cache Manager] Ошибка получения информации о слотах:', e);
+        const errorMessage = e.message || String(e);
+        showToast('error', `Ошибка получения информации о слотах: ${errorMessage}`);
+        return null;
+    }
 }
 
 // Создание объекта пустого слота
@@ -701,35 +692,13 @@ async function updateSlotsList() {
 async function saveSlotCache(slotId, filename, characterName) {
     const llamaUrl = getLlamaUrl();
     const url = `${llamaUrl}slots/${slotId}?action=save`;
-    const requestBody = { filename: filename };
     
-    console.debug(`[KV Cache Manager] Сохранение кеша: URL=${url}, filename=${filename}`);
+    console.debug(`[KV Cache Manager] Сохранение кеша: слот=${slotId}, filename=${filename}`);
     
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS);
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal
+        await httpClient.post(url, { filename: filename }, {
+            timeout: SAVE_TIMEOUT_MS
         });
-        
-        clearTimeout(timeoutId);
-        
-        console.debug(`[KV Cache Manager] Ответ сервера: status=${response.status}, ok=${response.ok}`);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}: ${response.status} ${errorText}`);
-            
-            showToast('error', `Не удалось сохранить кеш для ${characterName}`);
-            
-            return false;
-        }
         
         console.debug(`[KV Cache Manager] Кеш успешно сохранен для слота ${slotId}`);
         
@@ -761,12 +730,12 @@ async function saveSlotCache(slotId, filename, characterName) {
         
         return true;
     } catch (e) {
-        if (e.name === 'AbortError') {
-            console.error(`[KV Cache Manager] Таймаут при сохранении кеша слота ${slotId}`);
+        console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}:`, e);
+        const errorMessage = e.message || 'Неизвестная ошибка';
+        if (errorMessage.includes('Таймаут')) {
             showToast('error', `Таймаут при сохранении кеша для ${characterName}`);
         } else {
-            console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}:`, e);
-            showToast('error', `Ошибка при сохранении кеша для ${characterName}: ${e.message}`);
+            showToast('error', `Ошибка при сохранении кеша для ${characterName}: ${errorMessage}`);
         }
         return false;
     }
@@ -775,28 +744,14 @@ async function saveSlotCache(slotId, filename, characterName) {
 // Загрузка кеша для слота
 async function loadSlotCache(slotId, filename) {
     const llamaUrl = getLlamaUrl();
+    const url = `${llamaUrl}slots/${slotId}?action=restore`;
+    
+    console.debug(`[KV Cache Manager] Загрузка кеша: слот ${slotId}, файл ${filename}`);
+    
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
-        
-        console.debug(`[KV Cache Manager] Загрузка кеша: слот ${slotId}, файл ${filename}`);
-        
-        const response = await fetch(`${llamaUrl}slots/${slotId}?action=restore`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ filename: filename }),
-            signal: controller.signal
+        await httpClient.post(url, { filename: filename }, {
+            timeout: LOAD_TIMEOUT_MS
         });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[KV Cache Manager] Ошибка загрузки кеша слота ${slotId}: ${response.status} ${errorText}`);
-            return false;
-        }
         
         // При любой загрузке кеша сбрасываем счетчик использования в 0 и помечаем кеш как загруженный
         if (slotId !== null && slotId !== undefined && slotsState[slotId]) {
@@ -807,11 +762,7 @@ async function loadSlotCache(slotId, filename) {
         console.debug(`[KV Cache Manager] Кеш успешно загружен для слота ${slotId}, счетчик использования сброшен в 0, cacheLoaded установлен в true`);
         return true;
     } catch (e) {
-        if (e.name === 'AbortError') {
-            console.error(`[KV Cache Manager] Таймаут при загрузке кеша слота ${slotId}`);
-        } else {
-            console.error(`[KV Cache Manager] Ошибка загрузки кеша слота ${slotId}:`, e);
-        }
+        console.error(`[KV Cache Manager] Ошибка загрузки кеша слота ${slotId}:`, e);
         return false;
     }
 }
@@ -824,40 +775,20 @@ async function clearSlotCache(slotId) {
     console.debug(`[KV Cache Manager] Очистка кеша слота ${slotId}`);
     
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CLEAR_TIMEOUT_MS);
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            signal: controller.signal
+        await httpClient.post(url, null, {
+            timeout: CLEAR_TIMEOUT_MS
         });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[KV Cache Manager] Ошибка очистки слота ${slotId}: ${response.status} ${errorText}`);
-            return false;
-        }
         
         console.debug(`[KV Cache Manager] Кеш успешно очищен для слота ${slotId}`);
         return true;
     } catch (e) {
-        if (e.name === 'AbortError') {
-            console.error(`[KV Cache Manager] Таймаут при очистке кеша слота ${slotId}`);
-        } else {
-            console.error(`[KV Cache Manager] Ошибка очистки слота ${slotId}:`, e);
-        }
+        console.error(`[KV Cache Manager] Ошибка очистки слота ${slotId}:`, e);
         return false;
     }
 }
 
 // Очистка всех слотов
 async function clearAllSlotsCache() {
-    const llamaUrl = getLlamaUrl();
     
     try {
         // Получаем информацию о всех слотах
@@ -923,21 +854,11 @@ async function clearAllSlotsCache() {
 // Получение списка файлов через API плагина kv_cache-manager-plugin
 // Все файлы считываются напрямую из папки сохранений, метаданные не используются
 async function getFilesList() {
-    const llamaUrl = getLlamaUrl();
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
-        
         // Обращаемся к API плагина для получения списка файлов
-        const response = await fetch(`/api/plugins/kv-cache-manager/files`, {
-            method: 'GET',
-            signal: controller.signal
-        });
+        const data = await httpClient.get('/api/plugins/kv-cache-manager/files');
         
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-            const data = await response.json();
+        if (data) {
             // Фильтруем только .bin файлы и не директории
             const binFiles = (data.files || []).filter(file => 
                 file.name.endsWith('.bin') && !file.isDirectory
@@ -947,16 +868,12 @@ async function getFilesList() {
                 name: file.name,
                 size: file.size || 0
             }));
-        } else {
-            console.error('[KV Cache Manager] Ошибка получения списка файлов:', response.status);
-            showToast('error', 'Ошибка получения списка файлов с сервера');
-            return [];
         }
+        
+        return [];
     } catch (e) {
-        if (e.name !== 'AbortError') {
-            console.error('[KV Cache Manager] Ошибка получения списка файлов:', e);
-            showToast('error', 'Ошибка получения списка файлов: ' + e.message);
-        }
+        console.error('[KV Cache Manager] Ошибка получения списка файлов:', e);
+        showToast('error', 'Ошибка получения списка файлов: ' + e.message);
         return [];
     }
 }
@@ -1066,6 +983,7 @@ async function onSaveNowButtonClick() {
     }
 }
 
+// Получение CSRF токена (кэшируется)
 let csrfTokenCache = null;
 
 async function getCsrfToken() {
@@ -1074,13 +992,13 @@ async function getCsrfToken() {
     }
     
     try {
-        const response = await fetch('/csrf-token');
-        if (response.ok) {
-            const data = await response.json();
-            if (data && data.token) {
-                csrfTokenCache = data.token;
-                return csrfTokenCache;
-            }
+        const response = await httpClient.get('/csrf-token', {
+            timeout: 5000
+        });
+        
+        if (response && response.token) {
+            csrfTokenCache = response.token;
+            return csrfTokenCache;
         }
     } catch (e) {
         console.warn('[KV Cache Manager] Не удалось получить CSRF токен:', e);
@@ -1090,38 +1008,25 @@ async function getCsrfToken() {
 }
 
 async function deleteFile(filename) {
+    const url = `/api/plugins/kv-cache-manager/files/${filename}`;
+    const csrfToken = await getCsrfToken();
+    
+    const headers = {};
+    if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+    }
+    
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
-        
-        const url = `/api/plugins/kv-cache-manager/files/${filename}`;
-        const csrfToken = await getCsrfToken();
-        
-        const headers = {};
-        if (csrfToken) {
-            headers['X-CSRF-Token'] = csrfToken;
-        }
-        
-        const response = await fetch(url, {
-            method: 'DELETE',
+        await httpClient.delete(url, {
+            timeout: 10000,
             headers: headers,
-            credentials: 'same-origin',
-            signal: controller.signal
+            credentials: 'same-origin'
         });
         
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-            console.debug(`[KV Cache Manager] Файл удален: ${filename}`);
-            return true;
-        } else {
-            console.warn(`[KV Cache Manager] Не удалось удалить файл ${filename}: ${response.status}`);
-            return false;
-        }
+        console.debug(`[KV Cache Manager] Файл удален: ${filename}`);
+        return true;
     } catch (e) {
-        if (e.name !== 'AbortError') {
-            console.warn(`[KV Cache Manager] Ошибка при удалении файла ${filename}:`, e);
-        }
+        console.warn(`[KV Cache Manager] Ошибка при удалении файла ${filename}:`, e);
         return false;
     }
 }
