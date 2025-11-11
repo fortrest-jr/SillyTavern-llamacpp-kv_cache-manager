@@ -37,7 +37,7 @@ const messageCounters = {};
 
 let currentSlot = null;
 let slotsState = [];
-let previousChatId = null; // Хранит предыдущий chatId для проверки изменения чата
+let previousChatId = 'unknown'; // Хранит предыдущий chatId для проверки изменения чата (никогда не присваивается 'unknown' после инициализации)
 
 // Обновление индикатора следующего сохранения
 // Показывает минимальное оставшееся количество сообщений среди всех персонажей
@@ -1206,9 +1206,9 @@ function renderLoadModalChats() {
     // Обновляем ID и счетчик для текущего чата
     const currentChatCharacters = chats[currentChatId] || {};
     const currentCount = Object.values(currentChatCharacters).reduce((sum, files) => sum + files.length, 0);
-    // Отображаем исходное имя чата (до нормализации) для читаемости
-    const rawChatId = getCurrentChatId() || 'unknown';
-    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
+    // Отображаем нормализованное имя чата
+    const normalizedChatId = getNormalizedChatId();
+    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(normalizedChatId + ' [текущий]');
     $(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
     // Фильтруем чаты по поисковому запросу
@@ -1720,8 +1720,9 @@ jQuery(async () => {
         messageCounters[initialChatId] = 0;
     }
     
-    // Инициализируем previousChatId для отслеживания смены чата
-    previousChatId = getCurrentChatId();
+    // Инициализируем previousChatId как 'unknown' при старте
+    // previousChatId больше никогда не будет присвоен 'unknown'
+    previousChatId = 'unknown';
     
     updateNextSaveIndicator();
     
@@ -1834,16 +1835,15 @@ jQuery(async () => {
     // Подписка на событие переключения чата для автозагрузки
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         const currentChatId = getNormalizedChatId();
-        const previousChatIdNormalized = previousChatId ? normalizeChatId(previousChatId) : null;
+        // Проверяем, изменилось ли имя чата (и не меняется ли оно на "unknown")
+        // previousChatId может быть 'unknown' только при первой смене чата
+        const chatIdChanged = currentChatId !== 'unknown' &&
+                              previousChatId !== currentChatId;
         
-        // Проверяем, изменилось ли имя чата (и не меняется ли оно с/на "unknown")
-        const chatIdChanged = previousChatIdNormalized !== null && 
-                              previousChatIdNormalized !== currentChatId &&
-                              previousChatIdNormalized !== 'unknown' && 
-                              currentChatId !== 'unknown';
-        
-        // Обновляем previousChatId для следующего события
-        previousChatId = getCurrentChatId();
+        // Обновляем previousChatId для следующего события (никогда не присваиваем 'unknown')
+        if (currentChatId !== 'unknown') {
+            previousChatId = currentChatId;
+        }
         
         // Если имя чата не изменилось или меняется с/на unknown - не запускаем очистку
         if (!chatIdChanged) {
