@@ -3,15 +3,19 @@
 import { getContext } from "../../../extensions.js";
 import { getGroupMembers } from '../../../group-chats.js';
 import LlamaApi from './llama-api.js';
-import { normalizeCharacterName, getSlotsCountFromData } from './utils.js';
+import { normalizeCharacterName, getSlotsCountFromData, getNormalizedChatId } from './utils.js';
 import { showToast } from './ui.js';
 import { saveCharacterCache, saveAllSlotsCache, clearAllSlotsCache } from './cache-operations.js';
+import { getExtensionSettings } from './settings.js';
 
 // Инициализация API клиента
 const llamaApi = new LlamaApi();
 
 // Состояние слотов
 let slotsState = [];
+
+// Переменная для отслеживания предыдущего чата
+let previousChatId = 'unknown';
 
 // Получение состояния слотов
 export function getSlotsState() {
@@ -325,17 +329,38 @@ export function resetSlotUsage(slotIndex) {
     }
 }
 
+// Инициализация previousChatId
+export function initializePreviousChatId() {
+    previousChatId = 'unknown';
+}
+
+// Обработка события смены чата
+// Вызывается при событии CHAT_CHANGED
+export async function onChatChanged() {
+    const currentChatId = getNormalizedChatId();
+    const previousChatIdNormalized = previousChatId;
+    const extensionSettings = getExtensionSettings();
+    
+    // Обновляем previousChatId для следующего события (никогда не присваиваем 'unknown')
+    if (currentChatId !== 'unknown') {
+        previousChatId = currentChatId;
+    }
+    
+    // Обрабатываем смену чата
+    await handleChatChange(previousChatIdNormalized, currentChatId, extensionSettings);
+}
+
 // Обработка смены чата
 // Сохраняет кеш, очищает слоты и распределяет персонажей нового чата
-export async function handleChatChange(previousChatId, currentChatId, extensionSettings) {
+async function handleChatChange(previousChatIdParam, currentChatId, extensionSettings) {
     // Проверяем, изменилось ли имя чата (и не меняется ли оно на "unknown")
     // previousChatId может быть 'unknown' только при первой смене чата
     const chatIdChanged = currentChatId !== 'unknown' &&
-                          previousChatId !== currentChatId;
+                          previousChatIdParam !== currentChatId;
     
     // Если имя чата не изменилось или меняется с/на unknown - не запускаем очистку
     if (!chatIdChanged) {
-        console.debug(`[KV Cache Manager] Имя чата не изменилось (${previousChatId} -> ${currentChatId}) или меняется с/на unknown, пропускаем очистку`);
+        console.debug(`[KV Cache Manager] Имя чата не изменилось (${previousChatIdParam} -> ${currentChatId}) или меняется с/на unknown, пропускаем очистку`);
         return false;
     }
     
@@ -345,7 +370,7 @@ export async function handleChatChange(previousChatId, currentChatId, extensionS
         return false;
     }
     
-    console.debug(`[KV Cache Manager] Смена чата: ${previousChatId} -> ${currentChatId}`);
+    console.debug(`[KV Cache Manager] Смена чата: ${previousChatIdParam} -> ${currentChatId}`);
     
     // ВАЖНО: Сначала сохраняем кеш для всех персонажей, которые были в слотах
     await saveAllSlotsCache();

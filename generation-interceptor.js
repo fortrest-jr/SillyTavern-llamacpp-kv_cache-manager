@@ -142,3 +142,13 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
     }
 }
 
+// Обработка события готовности настроек генерации
+// Устанавливает id_slot для генерации
+export function setSlotForGeneration(params) {
+    const slot = getCurrentSlot();
+    if (slot !== null) {
+        params["id_slot"] = slot;
+        console.debug(`[KV Cache Manager] Установлен id_slot = ${slot} для генерации`);
+    }
+}
+

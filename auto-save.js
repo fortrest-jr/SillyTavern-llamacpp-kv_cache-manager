@@ -4,6 +4,7 @@ import { getNormalizedChatId, normalizeCharacterName } from './utils.js';
 import { getSlotsState, findCharacterSlotIndex } from './slot-manager.js';
 import { saveCharacterCache } from './cache-operations.js';
 import { getExtensionSettings } from './settings.js';
+import { getNormalizedCharacterNameFromData } from './generation-interceptor.js';
 
 // Счетчик сообщений для каждого персонажа в каждом чата (для автосохранения)
 // Структура: { [chatId]: { [characterName]: count } }
@@ -145,4 +146,11 @@ export async function incrementMessageCounter(characterName) {
             console.warn(`[KV Cache Manager] Не удалось найти слот для сохранения персонажа ${normalizedName}`);
         }
     }
+}
+
+// Обработка события получения сообщения для автосохранения
+export async function onMessageReceived(data) {
+    // Получаем нормализованное имя персонажа из данных события
+    const characterName = getNormalizedCharacterNameFromData(data);
+    await incrementMessageCounter(characterName);
 }
