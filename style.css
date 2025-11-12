@@ -192,11 +192,6 @@
     transition: all 0.2s;
 }
 
-.kv-cache-load-file-group.selected {
-    border-color: var(--SmartThemeBlurTintColor);
-    box-shadow: 0 0 0 2px var(--SmartThemeBlurTintColor);
-}
-
 .kv-cache-load-file-group-header {
     padding: 12px 15px;
     background: var(--SmartThemeBlurTintColor);
