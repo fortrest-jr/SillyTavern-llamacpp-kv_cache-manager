@@ -7,7 +7,7 @@ import { getAllSlotsInfo, getSlotsState, resetSlotUsage, setSlotCacheLoaded, get
 import { showToast, disableAllSaveButtons, enableAllSaveButtons } from './ui.js';
 import { getExtensionSettings } from './settings.js';
 import { getContext } from "../../../extensions.js";
-import { eventSource, event_types } from "../../../../script.js";
+import { eventSource, event_types, generateQuietPrompt } from "../../../../script.js";
 import { setPreloadingMode } from './generation-interceptor.js';
 
 // Инициализация API клиента
@@ -373,11 +373,6 @@ export async function preloadCharactersCache(characters) {
                 }
                 
                 console.debug(`[KV Cache Manager] Предзагрузка для персонажа ${characterName} в слот ${slotIndex}`);
-                
-                // generateQuietPrompt должен быть доступен глобально в SillyTavern
-                if (typeof generateQuietPrompt === 'undefined') {
-                    throw new Error('generateQuietPrompt не доступен');
-                }
                 
                 // Создаем Promise для ожидания события GENERATION_AFTER_COMMANDS
                 let generationStarted = false;

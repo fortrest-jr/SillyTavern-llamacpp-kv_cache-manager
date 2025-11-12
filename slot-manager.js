@@ -108,18 +108,41 @@ export function getChatCharactersWithMutedStatus() {
         
         // Получаем информацию о мьюченных персонажах
         // groups и selected_group - глобальные переменные SillyTavern
-        const group = typeof groups !== 'undefined' && typeof selected_group !== 'undefined' 
-            ? groups.find(x => x.id === selected_group)
-            : null;
+        let disabledAvatars = [];
         
-        const disabledAvatars = group?.disabled_members || [];
+        try {
+            if (typeof groups !== 'undefined' && Array.isArray(groups) && typeof selected_group !== 'undefined') {
+                const group = groups.find(x => x && x.id === selected_group);
+                if (group && Array.isArray(group.disabled_members)) {
+                    disabledAvatars = group.disabled_members;
+                }
+            }
+        } catch (e) {
+            console.warn('[KV Cache Manager] Ошибка при получении информации о мьюченных персонажах:', e);
+        }
+        
+        console.debug('[KV Cache Manager] Информация о группе:', {
+            hasGroups: typeof groups !== 'undefined',
+            selectedGroup: typeof selected_group !== 'undefined' ? selected_group : 'undefined',
+            disabledAvatars: disabledAvatars,
+            disabledAvatarsLength: disabledAvatars.length,
+            groupMembersAvatars: groupMembers.map(m => m?.avatar).filter(Boolean)
+        });
         
         // Формируем массив персонажей с информацией о мьюте
         const characters = groupMembers
             .filter(member => member && member.name && typeof member.name === 'string')
             .map(member => {
                 const normalizedName = normalizeCharacterName(member.name);
-                const isMuted = disabledAvatars.includes(member.avatar);
+                // Проверяем, мьючен ли персонаж (сравниваем avatar как строки)
+                const memberAvatar = String(member.avatar || '');
+                const isMuted = disabledAvatars.some(disabledAvatar => String(disabledAvatar) === memberAvatar);
+                
+                console.debug(`[KV Cache Manager] Персонаж ${member.name}:`, {
+                    avatar: memberAvatar,
+                    isMuted: isMuted,
+                    disabledAvatars: disabledAvatars
+                });
                 
                 // Получаем characterId из контекста персонажей
                 let characterId = null;

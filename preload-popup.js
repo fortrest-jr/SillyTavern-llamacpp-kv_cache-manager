@@ -1,6 +1,5 @@
 // Popup предзагрузки для KV Cache Manager
 
-import { normalizeCharacterName } from './utils.js';
 import { getChatCharactersWithMutedStatus } from './slot-manager.js';
 import { showToast } from './ui.js';
 import { extensionFolderPath } from './settings.js';
@@ -61,7 +60,13 @@ export async function openPreloadPopup() {
     console.debug('[KV Cache Manager] openPreloadPopup:', { 
         charactersCount: characters.length,
         selectedCount: preloadPopupData.selectedCharacters.size,
-        characters: characters
+        mutedCount: characters.filter(c => c.isMuted).length,
+        characters: characters.map(c => ({
+            name: c.name,
+            normalizedName: c.normalizedName,
+            isMuted: c.isMuted,
+            selected: preloadPopupData.selectedCharacters.has(c.normalizedName)
+        }))
     });
     
     // Загружаем HTML-контент из файла
