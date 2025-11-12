@@ -4,7 +4,7 @@ import LlamaApi from './llama-api.js';
 import { formatTimestamp, getNormalizedChatId } from './utils.js';
 import { generateSaveFilename, getFilesList, deleteFile, rotateCharacterFiles } from './file-manager.js';
 import { getAllSlotsInfo, getSlotsState, resetSlotUsage, setSlotCacheLoaded, getSlotsCountFromData, updateSlotsList } from './slot-manager.js';
-import { showToast } from './ui.js';
+import { showToast, disableAllSaveButtons, enableAllSaveButtons } from './ui.js';
 import { getExtensionSettings } from './settings.js';
 import { updateNextSaveIndicator } from './auto-save.js';
 
@@ -207,21 +207,29 @@ export async function saveAllSlotsCache() {
     const slotsState = getSlotsState();
     const totalSlots = slotsState.length;
     
-    // Сохраняем кеш для всех персонажей, которые были в слотах перед очисткой
-    // Важно: дожидаемся завершения сохранения перед очисткой слотов, чтобы избежать потери данных
-    for (let i = 0; i < totalSlots; i++) {
-        const slot = slotsState[i];
-        const currentCharacter = slot?.characterName;
-        if (currentCharacter && typeof currentCharacter === 'string') {
-            const usageCount = slot.usage || 0;
-            
-            // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
-            if (usageCount >= MIN_USAGE_FOR_SAVE) {
-                await saveCharacterCache(currentCharacter, i);
-            } else {
-                console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${currentCharacter} (использование: ${usageCount} < ${MIN_USAGE_FOR_SAVE})`);
+    // Отключаем все кнопки сохранения (кроме кнопок отдельных слотов)
+    disableAllSaveButtons();
+    
+    try {
+        // Сохраняем кеш для всех персонажей, которые были в слотах перед очисткой
+        // Важно: дожидаемся завершения сохранения перед очисткой слотов, чтобы избежать потери данных
+        for (let i = 0; i < totalSlots; i++) {
+            const slot = slotsState[i];
+            const currentCharacter = slot?.characterName;
+            if (currentCharacter && typeof currentCharacter === 'string') {
+                const usageCount = slot.usage || 0;
+                
+                // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
+                if (usageCount >= MIN_USAGE_FOR_SAVE) {
+                    await saveCharacterCache(currentCharacter, i);
+                } else {
+                    console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${currentCharacter} (использование: ${usageCount} < ${MIN_USAGE_FOR_SAVE})`);
+                }
             }
         }
+    } finally {
+        // Включаем кнопки обратно
+        enableAllSaveButtons();
     }
 }
 

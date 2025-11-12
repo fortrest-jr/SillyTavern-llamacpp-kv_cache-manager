@@ -37,18 +37,40 @@ export function showToast(type, message, title = 'KV Cache Manager') {
     }
 }
 
+// Отключение всех кнопок сохранения (кроме кнопок отдельных слотов)
+export function disableAllSaveButtons() {
+    $("#kv-cache-save-button").prop('disabled', true);
+    $("#kv-cache-save-now-button").prop('disabled', true);
+}
+
+// Включение всех кнопок сохранения
+export function enableAllSaveButtons() {
+    $("#kv-cache-save-button").prop('disabled', false);
+    $("#kv-cache-save-now-button").prop('disabled', false);
+}
+
 // Обработчики для кнопок
 export async function onSaveButtonClick() {
-    await saveCache(true);
+    disableAllSaveButtons();
+    try {
+        await saveCache(true);
+    } finally {
+        enableAllSaveButtons();
+    }
 }
 
 export async function onSaveNowButtonClick() {
-    const success = await saveCache(false);
-    if (success) {
-        // Сбрасываем счётчики всех персонажей текущего чата после успешного сохранения
-        const chatId = getNormalizedChatId();
-        resetChatCounters(chatId);
-        updateNextSaveIndicator();
+    disableAllSaveButtons();
+    try {
+        const success = await saveCache(false);
+        if (success) {
+            // Сбрасываем счётчики всех персонажей текущего чата после успешного сохранения
+            const chatId = getNormalizedChatId();
+            resetChatCounters(chatId);
+            updateNextSaveIndicator();
+        }
+    } finally {
+        enableAllSaveButtons();
     }
 }
 
