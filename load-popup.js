@@ -67,21 +67,25 @@ export function groupFilesByChatAndCharacter(files) {
 function setupLoadPopupHandlers() {
     // Обработчик для текущего чата
     $(document).off('click', '.kv-cache-load-chat-item-current').on('click', '.kv-cache-load-chat-item-current', function() {
-        selectLoadPopupChat('current');
+        const popupDlg = $(this).closest('.popup, dialog');
+        selectLoadPopupChat('current', popupDlg.length ? popupDlg[0] : document);
     });
     
     // Обработчик для других чатов (делегирование)
     $(document).off('click', '.kv-cache-load-chat-item:not(.kv-cache-load-chat-item-current)').on('click', '.kv-cache-load-chat-item:not(.kv-cache-load-chat-item-current)', function() {
         const chatId = $(this).data('chat-id');
         if (chatId) {
-            selectLoadPopupChat(chatId);
+            const popupDlg = $(this).closest('.popup, dialog');
+            selectLoadPopupChat(chatId, popupDlg.length ? popupDlg[0] : document);
         }
     });
     
     // Обработчик поиска
     $(document).off('input', '#kv-cache-load-search-input').on('input', '#kv-cache-load-search-input', function() {
         const query = $(this).val();
-        updateSearchQuery(query);
+        // Находим popup через closest
+        const popupDlg = $(this).closest('.popup, dialog');
+        updateSearchQuery(query, popupDlg.length ? popupDlg[0] : document);
     });
 }
 
@@ -102,6 +106,13 @@ export async function openLoadPopup() {
     loadPopupData.selectedChatId = null; // Сбрасываем выбранный чат
     loadPopupData.selectedCharacters = {};
     loadPopupData.searchQuery = '';
+    
+    console.debug('[KV Cache Manager] openLoadPopup:', { 
+        filesCount: filesList.length, 
+        chatsCount: Object.keys(loadPopupData.chats).length,
+        currentChatId: loadPopupData.currentChatId,
+        chats: loadPopupData.chats 
+    });
     
     // Загружаем HTML-контент из файла
     const popupHTML = await $.get(`${extensionFolderPath}/load-popup.html`);
@@ -133,6 +144,37 @@ export async function openLoadPopup() {
                 { text: 'Загрузить', result: POPUP_RESULT_LOAD },
                 { text: 'Отмена', result: POPUP_RESULT.NEGATIVE }
             ],
+            // Инициализация после открытия popup
+            onOpen: async (popup) => {
+                // Небольшая задержка для гарантии, что DOM готов
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Ищем элементы внутри popup (popup.content - это HTMLElement)
+                const popupContent = popup.content.querySelector('#kv-cache-load-popup-content');
+                if (!popupContent) {
+                    console.error('[KV Cache Manager] Не найден контент popup в', popup.content);
+                    return;
+                }
+                
+                console.debug('[KV Cache Manager] Popup открыт, инициализация...', {
+                    hasContent: !!popupContent,
+                    chatsList: !!popupContent.querySelector('#kv-cache-load-chats-list'),
+                    filesList: !!popupContent.querySelector('#kv-cache-load-files-list'),
+                    dlg: popup.dlg
+                });
+                
+                setupLoadPopupHandlers();
+                
+                // Отображаем чаты и файлы (используем popup.dlg как контекст для поиска)
+                renderLoadPopupChats(popup.dlg);
+                selectLoadPopupChat('current', popup.dlg);
+                
+                // Изначально отключаем кнопку "Загрузить"
+                const loadButton = popup.dlg.querySelector(`[data-result="${POPUP_RESULT_LOAD}"]`);
+                if (loadButton) {
+                    loadButton.disabled = true;
+                }
+            },
             // Выполняем загрузку перед закрытием popup, если была нажата кнопка "Загрузить"
             onClosing: async (popup) => {
                 if (popup.result === POPUP_RESULT_LOAD && !loadPerformed) {
@@ -149,41 +191,8 @@ export async function openLoadPopup() {
         }
     );
     
-    // Настраиваем обработчики после открытия popup
-    // Используем MutationObserver для отслеживания появления popup в DOM
-    const observer = new MutationObserver((mutations, obs) => {
-        const popupContent = $('#kv-cache-load-popup-content');
-        if (popupContent.length > 0) {
-            obs.disconnect();
-            
-            setupLoadPopupHandlers();
-            
-            // Отображаем чаты и файлы
-            renderLoadPopupChats();
-            selectLoadPopupChat('current');
-            
-            // Изначально отключаем кнопку "Загрузить"
-            const loadButton = $(`[data-result="${POPUP_RESULT_LOAD}"]`);
-            if (loadButton.length) {
-                loadButton.prop('disabled', true);
-            }
-        }
-    });
-    
-    // Начинаем наблюдение за изменениями в DOM
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-    
-    // Очищаем observer через 5 секунд, если popup не появился
-    setTimeout(() => observer.disconnect(), 5000);
-    
     // Ждём результат popup
-    const result = await popupPromise;
-    
-    // Отключаем observer после закрытия popup
-    observer.disconnect();
+    await popupPromise;
 }
 
 // Закрытие popup загрузки (больше не используется, оставлено для совместимости)
@@ -194,18 +203,25 @@ export function closeLoadPopup() {
 }
 
 // Отображение списка чатов
-export function renderLoadPopupChats() {
-    const chatsList = $("#kv-cache-load-chats-list");
+export function renderLoadPopupChats(context = document) {
+    const chatsList = $(context).find("#kv-cache-load-chats-list");
+    if (chatsList.length === 0) {
+        console.error('[KV Cache Manager] Не найден элемент #kv-cache-load-chats-list в контексте', context);
+        return;
+    }
+    
     const currentChatId = loadPopupData.currentChatId;
     const chats = loadPopupData.chats;
+    
+    console.debug('[KV Cache Manager] renderLoadPopupChats:', { currentChatId, chatsCount: Object.keys(chats).length, chats });
     
     // Обновляем ID и счетчик для текущего чата
     const currentChatCharacters = chats[currentChatId] || {};
     const currentCount = Object.values(currentChatCharacters).reduce((sum, files) => sum + files.length, 0);
     // Отображаем исходное имя чата (до нормализации) для читаемости
     const rawChatId = getCurrentChatId() || 'unknown';
-    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
-    $(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
+    $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
+    $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
     // Фильтруем чаты по поисковому запросу
     const searchQuery = loadPopupData.searchQuery.toLowerCase();
@@ -235,42 +251,52 @@ export function renderLoadPopupChats() {
             </div>
         `);
         
-        chatItem.on('click', () => selectLoadPopupChat(chatId));
+        chatItem.on('click', function() {
+            const popupDlg = $(this).closest('.popup, dialog');
+            selectLoadPopupChat(chatId, popupDlg.length ? popupDlg[0] : document);
+        });
         chatsList.append(chatItem);
     }
 }
 
 // Выбор чата в popup
-export function selectLoadPopupChat(chatId) {
+export function selectLoadPopupChat(chatId, context = document) {
     // Убираем активный класс со всех чатов
-    $(".kv-cache-load-chat-item").removeClass('active');
+    $(context).find(".kv-cache-load-chat-item").removeClass('active');
     
     // Устанавливаем активный класс и сохраняем выбранный чат
     if (chatId === 'current') {
-        $(".kv-cache-load-chat-item-current").addClass('active');
+        $(context).find(".kv-cache-load-chat-item-current").addClass('active');
         chatId = loadPopupData.currentChatId;
     } else {
-        $(`.kv-cache-load-chat-item[data-chat-id="${chatId}"]`).addClass('active');
+        $(context).find(`.kv-cache-load-chat-item[data-chat-id="${chatId}"]`).addClass('active');
     }
     
     // Сохраняем выбранный чат для использования при загрузке
     loadPopupData.selectedChatId = chatId;
     
     // Отображаем персонажей выбранного чата
-    renderLoadPopupFiles(chatId);
+    renderLoadPopupFiles(chatId, context);
     
     // Сбрасываем выбор
     loadPopupData.selectedCharacters = {};
-    $("#kv-cache-load-confirm-button").prop('disabled', true);
-    $("#kv-cache-load-selected-info").text('Персонажи не выбраны');
+    $(context).find("#kv-cache-load-confirm-button").prop('disabled', true);
+    $(context).find("#kv-cache-load-selected-info").text('Персонажи не выбраны');
 }
 
 // Отображение персонажей выбранного чата
-export function renderLoadPopupFiles(chatId) {
-    const filesList = $("#kv-cache-load-files-list");
+export function renderLoadPopupFiles(chatId, context = document) {
+    const filesList = $(context).find("#kv-cache-load-files-list");
+    if (filesList.length === 0) {
+        console.error('[KV Cache Manager] Не найден элемент #kv-cache-load-files-list в контексте', context);
+        return;
+    }
+    
     const chats = loadPopupData.chats;
     const chatCharacters = chats[chatId] || {};
     const searchQuery = loadPopupData.searchQuery.toLowerCase();
+    
+    console.debug('[KV Cache Manager] renderLoadPopupFiles:', { chatId, charactersCount: Object.keys(chatCharacters).length, chatCharacters });
     
     const characterNames = Object.keys(chatCharacters);
     
@@ -374,8 +400,9 @@ export function renderLoadPopupFiles(chatId) {
                 const selectedTimestamp = file.timestamp;
                 loadPopupData.selectedCharacters[characterName] = selectedTimestamp;
                 
-                // Обновляем UI
-                updateLoadPopupSelection();
+                // Обновляем UI (находим popup через closest)
+                const popupDlg = timestampItem.closest('.popup, dialog');
+                updateLoadPopupSelection(popupDlg.length ? popupDlg[0] : document);
             });
             
             content.append(timestampItem);
@@ -397,9 +424,9 @@ export function renderLoadPopupFiles(chatId) {
 }
 
 // Обновление информации о выбранных персонажах
-export function updateLoadPopupSelection() {
+export function updateLoadPopupSelection(context = document) {
     const selectedCount = Object.keys(loadPopupData.selectedCharacters).length;
-    const selectedInfo = $("#kv-cache-load-selected-info");
+    const selectedInfo = $(context).find("#kv-cache-load-selected-info");
     
     if (selectedInfo.length === 0) {
         return; // Popup не открыт
@@ -408,7 +435,7 @@ export function updateLoadPopupSelection() {
     if (selectedCount === 0) {
         selectedInfo.text('Персонажи не выбраны');
         // Отключаем кнопку "Загрузить" если она есть
-        const loadButton = $(`[data-result="${POPUP_RESULT_LOAD}"]`);
+        const loadButton = $(context).find(`[data-result="${POPUP_RESULT_LOAD}"]`);
         if (loadButton.length) {
             loadButton.prop('disabled', true);
         }
@@ -416,7 +443,7 @@ export function updateLoadPopupSelection() {
         const charactersList = Object.keys(loadPopupData.selectedCharacters).join(', ');
         selectedInfo.html(`<strong>Выбрано:</strong> ${selectedCount} персонаж${selectedCount !== 1 ? 'ей' : ''} (${charactersList})`);
         // Включаем кнопку "Загрузить"
-        const loadButton = $(`[data-result="${POPUP_RESULT_LOAD}"]`);
+        const loadButton = $(context).find(`[data-result="${POPUP_RESULT_LOAD}"]`);
         if (loadButton.length) {
             loadButton.prop('disabled', false);
         }
@@ -622,11 +649,11 @@ export async function loadSelectedCache() {
 }
 
 // Обновление поискового запроса
-export function updateSearchQuery(query) {
+export function updateSearchQuery(query, context = document) {
     loadPopupData.searchQuery = query;
-    renderLoadPopupChats();
-    const activeChat = $(".kv-cache-load-chat-item.active");
-    const activeCurrentChat = $(".kv-cache-load-chat-item-current.active");
+    renderLoadPopupChats(context);
+    const activeChat = $(context).find(".kv-cache-load-chat-item.active");
+    const activeCurrentChat = $(context).find(".kv-cache-load-chat-item-current.active");
     
     let currentChatId = null;
     if (activeChat.length) {
@@ -638,6 +665,6 @@ export function updateSearchQuery(query) {
     if (currentChatId) {
         // Обновляем выбранный чат при поиске
         loadPopupData.selectedChatId = currentChatId;
-        renderLoadPopupFiles(currentChatId);
+        renderLoadPopupFiles(currentChatId, context);
     }
 }
