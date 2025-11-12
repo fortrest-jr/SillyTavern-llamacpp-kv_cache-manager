@@ -395,15 +395,24 @@ export function renderLoadPopupFiles(chatId, context = document) {
             timestampItem.on('click', function(e) {
                 e.stopPropagation();
                 
-                // Убираем выделение с других сохранений этого персонажа
-                $(`.kv-cache-load-file-item[data-character-name="${characterName}"]`).removeClass('selected');
+                // Проверяем, является ли этот элемент уже выбранным
+                const isCurrentlySelected = loadPopupData.selectedCharacters[characterName] === file.timestamp;
                 
-                // Выделяем выбранное сохранение
-                timestampItem.addClass('selected');
-                
-                // Выбираем этот timestamp для персонажа
-                const selectedTimestamp = file.timestamp;
-                loadPopupData.selectedCharacters[characterName] = selectedTimestamp;
+                if (isCurrentlySelected) {
+                    // Снимаем выделение - убираем класс и удаляем из selectedCharacters
+                    timestampItem.removeClass('selected');
+                    delete loadPopupData.selectedCharacters[characterName];
+                } else {
+                    // Убираем выделение с других сохранений этого персонажа
+                    $(`.kv-cache-load-file-item[data-character-name="${characterName}"]`).removeClass('selected');
+                    
+                    // Выделяем выбранное сохранение
+                    timestampItem.addClass('selected');
+                    
+                    // Выбираем этот timestamp для персонажа
+                    const selectedTimestamp = file.timestamp;
+                    loadPopupData.selectedCharacters[characterName] = selectedTimestamp;
+                }
                 
                 // Обновляем UI (находим popup через closest)
                 const popupDlg = timestampItem.closest('.popup, dialog');
