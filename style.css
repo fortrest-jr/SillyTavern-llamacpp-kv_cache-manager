@@ -88,78 +88,6 @@
     cursor: not-allowed;
 }
 
-/* Стили для модалки загрузки */
-#kv-cache-auto-load-confirm-modal {
-    z-index: 10000;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_content {
-    max-width: 95vw;
-    width: 500px;
-    max-height: 90vh;
-    background: var(--SmartThemeBlurTintColor, #1a1a1a);
-    border-radius: 8px;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_header {
-    background: transparent;
-    border-bottom: 1px solid var(--SmartThemeBorderColor);
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_body {
-    padding: 20px;
-    min-height: 100px;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_footer {
-    margin-top: 15px;
-    padding-top: 15px;
-    border-top: 1px solid var(--SmartThemeBorderColor);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_footer > div:last-child {
-    display: flex;
-    gap: 10px;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_close {
-    background: transparent;
-    border: none;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    padding: 5px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_close:hover {
-    opacity: 0.7;
-}
-
-#kv-cache-auto-load-confirm-modal .dialogue_popup_close i {
-    font-size: 1.2em;
-}
-
-#kv-cache-auto-load-confirm-info {
-    color: var(--SmartThemeBodyColor);
-    line-height: 1.5;
-    padding: 20px 0;
-}
-
 /* Стили для элементов внутри модалки загрузки (теперь используется callGenericPopup) */
 #kv-cache-load-popup-content {
     min-width: 300px;
@@ -361,34 +289,11 @@
     gap: 8px;
 }
 
-.kv-cache-load-file-item-meta {
-    font-size: 0.85em;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.7;
-    display: flex;
-    gap: 12px;
-}
-
 .kv-cache-load-empty {
     text-align: center;
     padding: 40px 20px;
     color: var(--SmartThemeBodyColor);
     opacity: 0.6;
-}
-
-.kv-cache-load-loading {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--SmartThemeBodyColor);
-}
-
-.kv-cache-load-loading i {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 /* Планшеты */
@@ -467,11 +372,6 @@
         word-break: break-word;
     }
     
-    .kv-cache-load-file-item-meta {
-        font-size: 0.9em;
-        flex-wrap: wrap;
-    }
-    
     /* Улучшаем отображение групп */
     .kv-cache-load-file-group-title {
         flex-wrap: wrap;
@@ -481,69 +381,6 @@
     .kv-cache-load-file-group-info {
         flex-wrap: wrap;
         gap: 8px;
-    }
-    
-    /* Адаптивность для модалки подтверждения автозагрузки */
-    #kv-cache-auto-load-confirm-modal {
-        padding: 20px;
-        align-items: flex-start;
-        padding-top: 10vh;
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_content {
-        width: calc(100vw - 40px);
-        max-width: calc(100vw - 40px);
-        max-height: calc(90vh - 20px);
-        margin: 0;
-        border-radius: 8px;
-        display: flex;
-        flex-direction: column;
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_header {
-        padding: 15px 20px;
-        border-bottom: 1px solid var(--SmartThemeBorderColor);
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_body {
-        padding: 20px;
-        min-height: auto;
-        flex: 1;
-        overflow-y: auto;
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_footer {
-        flex-direction: column;
-        gap: 12px;
-        align-items: stretch;
-        padding: 15px 20px;
-        margin-top: 0;
-        border-top: 1px solid var(--SmartThemeBorderColor);
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_footer > div:first-child {
-        display: none;
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_footer > div:last-child {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        width: 100%;
-    }
-    
-    #kv-cache-auto-load-confirm-modal .dialogue_popup_footer .menu_button {
-        width: 100%;
-        padding: 14px;
-        font-size: 16px; /* Предотвращает zoom на iOS */
-        min-height: 48px;
-    }
-    
-    #kv-cache-auto-load-confirm-info {
-        padding: 0 !important;
-        font-size: 1em;
-        line-height: 1.6;
-        word-wrap: break-word;
     }
 }
 
