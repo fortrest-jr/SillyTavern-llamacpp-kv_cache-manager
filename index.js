@@ -3,7 +3,7 @@
 import { eventSource, event_types } from "../../../../script.js";
 
 import { loadSettings, createSettingsHandlers } from './settings.js';
-import { onSaveButtonClick, onSaveNowButtonClick, onLoadButtonClick, onReleaseAllSlotsButtonClick, onSaveSlotButtonClick } from './ui.js';
+import { onSaveButtonClick, onSaveNowButtonClick, onLoadButtonClick, onReleaseAllSlotsButtonClick, onSaveSlotButtonClick, showToast } from './ui.js';
 import { initializeSlots, updateSlotsList, redistributeCharacters, initializePreviousChatId } from './slot-manager.js';
 import { updateNextSaveIndicator, processMessageForAutoSave } from './auto-save.js';
 import { closeLoadModal, selectLoadModalChat, loadSelectedCache, updateSearchQuery } from './load-modal.js';
@@ -15,76 +15,114 @@ const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
 // Функция вызывается при загрузке расширения
 jQuery(async () => {
-    // Загружаем HTML из файла
-    const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
-    $("#extensions_settings").append(settingsHtml);
-
-    // Загружаем настройки при старте
-    await loadSettings();
-    await initializeSlots();
-    initializePreviousChatId();
-    updateNextSaveIndicator();
-    
-    // Регистрируем функцию-перехватчик в глобальном объекте
-    window['KVCacheManagerInterceptor'] = KVCacheManagerInterceptor;
-    
-    // Обновляем список слотов при запуске генерации
-    eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, updateSlotsList);
-    eventSource.on(event_types.TEXT_COMPLETION_SETTINGS_READY, setSlotForGeneration);
-    eventSource.on(event_types.MESSAGE_RECEIVED, processMessageForAutoSave);
-    eventSource.on(event_types.CHAT_CHANGED, redistributeCharacters);
-
-    // Настраиваем обработчики событий для изменения настроек
-    const settingsHandlers = createSettingsHandlers();
-    $("#kv-cache-enabled").on("input", settingsHandlers.onEnabledChange);
-    $("#kv-cache-save-interval").on("input", settingsHandlers.onSaveIntervalChange);
-    $("#kv-cache-max-files").on("input", settingsHandlers.onMaxFilesChange);
-    $("#kv-cache-show-notifications").on("input", settingsHandlers.onShowNotificationsChange);
-    $("#kv-cache-clear-on-chat-change").on("input", settingsHandlers.onClearOnChatChangeChange);
-    
-    // Обработчики для кнопок
-    $("#kv-cache-save-button").on("click", onSaveButtonClick);
-    $("#kv-cache-load-button").on("click", onLoadButtonClick);
-    $("#kv-cache-save-now-button").on("click", onSaveNowButtonClick);
-    
-    // Кнопка предзагрузки пока не реализована - отключаем
-    $("#kv-cache-preload-characters-button")
-        .prop("disabled", true)
-        .attr("title", "Функция пока не реализована");
-    
-    $("#kv-cache-release-all-slots-button").on("click", onReleaseAllSlotsButtonClick);
-    
-    // Обработчик для кнопок сохранения слотов (делегирование для динамических элементов)
-    $(document).on("click", ".kv-cache-save-slot-button", onSaveSlotButtonClick);
-    
-    // Обработчики для модалки загрузки (используем делегирование для динамических элементов)
-    $(document).on("click", "#kv-cache-load-modal-close", closeLoadModal);
-    $(document).on("click", "#kv-cache-load-cancel-button", closeLoadModal);
-    $(document).on("click", "#kv-cache-load-confirm-button", loadSelectedCache);
-    
-    // Обработчик для текущего чата (делегирование)
-    $(document).on("click", ".kv-cache-load-chat-item-current", function() {
-        selectLoadModalChat('current');
-    });
-    
-    // Обработчик поиска
-    $(document).on("input", "#kv-cache-load-search-input", function() {
-        const query = $(this).val();
-        updateSearchQuery(query);
-    });
-    
-    // Закрытие модалки по клику вне её области
-    $(document).on("click", "#kv-cache-load-modal", function(e) {
-        if ($(e.target).is("#kv-cache-load-modal")) {
-            closeLoadModal();
+    try {
+        showToast('info', 'Начало загрузки расширения...', 'Загрузка');
+        
+        // Загружаем HTML из файла
+        showToast('info', 'Загрузка HTML настроек...', 'Загрузка');
+        const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
+        
+        // Проверяем, что контейнер существует
+        const $extensionsSettings = $("#extensions_settings");
+        if ($extensionsSettings.length === 0) {
+            showToast('error', 'Контейнер #extensions_settings не найден', 'Загрузка');
+            console.error('[KV Cache Manager] Контейнер #extensions_settings не найден');
+            return;
         }
-    });
-    
-    // Закрытие модалки по Escape
-    $(document).on("keydown", function(e) {
-        if (e.key === "Escape" && $("#kv-cache-load-modal").is(":visible")) {
-            closeLoadModal();
+        
+        showToast('info', 'Добавление HTML в DOM...', 'Загрузка');
+        $extensionsSettings.append(settingsHtml);
+        
+        // Проверяем, что HTML был добавлен
+        if ($("#kv-cache-enabled").length === 0) {
+            showToast('error', 'HTML настроек не был добавлен в DOM', 'Загрузка');
+            console.error('[KV Cache Manager] HTML настроек не был добавлен в DOM');
+            return;
         }
-    });
-    
+        
+        showToast('info', 'Загрузка настроек...', 'Загрузка');
+        await loadSettings();
+        showToast('success', 'Настройки загружены', 'Загрузка');
+        
+        showToast('info', 'Инициализация слотов...', 'Загрузка');
+        await initializeSlots();
+        showToast('success', 'Слоты инициализированы', 'Загрузка');
+        
+        showToast('info', 'Инициализация предыдущего чата...', 'Загрузка');
+        initializePreviousChatId();
+        
+        showToast('info', 'Обновление индикаторов...', 'Загрузка');
+        updateNextSaveIndicator();
+        
+        showToast('info', 'Регистрация перехватчика генерации...', 'Загрузка');
+        // Регистрируем функцию-перехватчик в глобальном объекте
+        window['KVCacheManagerInterceptor'] = KVCacheManagerInterceptor;
+        
+        showToast('info', 'Регистрация обработчиков событий...', 'Загрузка');
+        // Обновляем список слотов при запуске генерации
+        eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, updateSlotsList);
+        eventSource.on(event_types.TEXT_COMPLETION_SETTINGS_READY, setSlotForGeneration);
+        eventSource.on(event_types.MESSAGE_RECEIVED, processMessageForAutoSave);
+        eventSource.on(event_types.CHAT_CHANGED, redistributeCharacters);
+
+        // Настраиваем обработчики событий для изменения настроек
+        const settingsHandlers = createSettingsHandlers();
+        $("#kv-cache-enabled").on("input", settingsHandlers.onEnabledChange);
+        $("#kv-cache-save-interval").on("input", settingsHandlers.onSaveIntervalChange);
+        $("#kv-cache-max-files").on("input", settingsHandlers.onMaxFilesChange);
+        $("#kv-cache-show-notifications").on("input", settingsHandlers.onShowNotificationsChange);
+        $("#kv-cache-clear-on-chat-change").on("input", settingsHandlers.onClearOnChatChangeChange);
+        
+        // Обработчики для кнопок
+        $("#kv-cache-save-button").on("click", onSaveButtonClick);
+        $("#kv-cache-load-button").on("click", onLoadButtonClick);
+        $("#kv-cache-save-now-button").on("click", onSaveNowButtonClick);
+        
+        // Кнопка предзагрузки пока не реализована - отключаем
+        $("#kv-cache-preload-characters-button")
+            .prop("disabled", true)
+            .attr("title", "Функция пока не реализована");
+        
+        $("#kv-cache-release-all-slots-button").on("click", onReleaseAllSlotsButtonClick);
+        
+        // Обработчик для кнопок сохранения слотов (делегирование для динамических элементов)
+        $(document).on("click", ".kv-cache-save-slot-button", onSaveSlotButtonClick);
+        
+        // Обработчики для модалки загрузки (используем делегирование для динамических элементов)
+        $(document).on("click", "#kv-cache-load-modal-close", closeLoadModal);
+        $(document).on("click", "#kv-cache-load-cancel-button", closeLoadModal);
+        $(document).on("click", "#kv-cache-load-confirm-button", loadSelectedCache);
+        
+        // Обработчик для текущего чата (делегирование)
+        $(document).on("click", ".kv-cache-load-chat-item-current", function() {
+            selectLoadModalChat('current');
+        });
+        
+        // Обработчик поиска
+        $(document).on("input", "#kv-cache-load-search-input", function() {
+            const query = $(this).val();
+            updateSearchQuery(query);
+        });
+        
+        // Закрытие модалки по клику вне её области
+        $(document).on("click", "#kv-cache-load-modal", function(e) {
+            if ($(e.target).is("#kv-cache-load-modal")) {
+                closeLoadModal();
+            }
+        });
+        
+        // Закрытие модалки по Escape
+        $(document).on("keydown", function(e) {
+            if (e.key === "Escape" && $("#kv-cache-load-modal").is(":visible")) {
+                closeLoadModal();
+            }
+        });
+        
+        showToast('success', 'Расширение успешно загружено!', 'Загрузка');
+        console.log('[KV Cache Manager] Расширение успешно загружено');
+        
+    } catch (error) {
+        showToast('error', `Ошибка при загрузке: ${error.message}`, 'Загрузка');
+        console.error('[KV Cache Manager] Ошибка при загрузке расширения:', error);
+    }
 });
