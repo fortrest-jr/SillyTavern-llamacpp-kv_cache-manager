@@ -1,0 +1,39 @@
+<!-- Контент popup загрузки кеша для callGenericPopup -->
+<div id="kv-cache-load-popup-content">
+    <!-- Поиск -->
+    <div class="kv-cache-load-search">
+        <input type="text" id="kv-cache-load-search-input" class="text_pole" placeholder="Поиск по чату или имени..." />
+    </div>
+    
+    <div class="kv-cache-load-content">
+        <!-- Боковая панель с чатами -->
+        <div class="kv-cache-load-chats">
+            <div class="kv-cache-load-chat-item kv-cache-load-chat-item-current" data-chat-id="current">
+                <div class="kv-cache-load-chat-name">
+                    <i class="fa-solid fa-comments"></i>
+                    <span class="kv-cache-load-chat-name-text">Текущий чат</span>
+                </div>
+                <div class="kv-cache-load-chat-count">-</div>
+            </div>
+            <div id="kv-cache-load-chats-list"></div>
+        </div>
+        
+        <!-- Разделитель между чатами и файлами -->
+        <div class="kv-cache-load-divider"></div>
+        
+        <!-- Основная область с файлами -->
+        <div class="kv-cache-load-files">
+            <div id="kv-cache-load-files-list">
+                <p class="kv-cache-load-empty">
+                    Загрузка файлов...
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Информация о выбранных персонажах -->
+    <div id="kv-cache-load-selected-info">
+        Персонажи не выбраны
+    </div>
+</div>
+
