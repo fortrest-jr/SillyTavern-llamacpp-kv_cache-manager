@@ -1,7 +1,7 @@
 // Утилиты для работы со скрытыми сообщениями в чате
 
+import { getContext } from "../../../extensions.js";
 import { eventSource, event_types, chat, saveChatConditional, addOneMessage, getMessageTimeStamp, updateMessageBlock } from "../../../../script.js";
-import { IGNORE_SYMBOL } from '../../../constants.js';
 
 
 // Создание невидимого сообщения для отслеживания прогресса
@@ -9,6 +9,9 @@ import { IGNORE_SYMBOL } from '../../../constants.js';
 // @param {string} name - Имя отправителя (по умолчанию 'System')
 // @returns {Promise<number>} - ID созданного сообщения
 export async function createHiddenMessage(text, name = 'System') {
+    const context = getContext();
+    const IGNORE_SYMBOL = context.symbols.ignore;
+    
     const message = {
         name: name,
         is_user: false,
