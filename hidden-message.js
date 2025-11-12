@@ -1,7 +1,7 @@
 // Утилиты для работы со скрытыми сообщениями в чате
 
 import { eventSource, event_types, chat, saveChatConditional, addOneMessage, getMessageTimeStamp, updateMessageBlock } from "../../../../script.js";
-import { IGNORE_SYMBOL } from '../../../constants.js';
+import { IGNORE_SYMBOL } from '../../../../scripts/constants.js';
 
 // Создание невидимого сообщения для отслеживания прогресса
 // @param {string} text - Текст сообщения
