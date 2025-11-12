@@ -1,9 +1,10 @@
 // UI компоненты и уведомления для KV Cache Manager
 
+import { getExtensionSettings } from './settings.js';
+
 // Показ toast-уведомления
-export function showToast(type, message, title = 'KV Cache Manager', callbacks = {}) {
-    const { getExtensionSettings } = callbacks;
-    const extensionSettings = getExtensionSettings ? getExtensionSettings() : {};
+export function showToast(type, message, title = 'KV Cache Manager') {
+    const extensionSettings = getExtensionSettings();
     
     if (typeof toastr === 'undefined') {
         console.debug(`[KV Cache Manager] ${title}: ${message}`);

@@ -2,6 +2,9 @@
 
 import { extension_settings } from "../../../extensions.js";
 import { saveSettingsDebounced } from "../../../../script.js";
+import { showToast } from './ui.js';
+import { updateNextSaveIndicator } from './auto-save.js';
+import { updateSlotsList } from './slot-manager.js';
 
 // Имя расширения должно совпадать с именем папки
 const extensionName = "kv_cache-manager";
@@ -23,7 +26,7 @@ export function getExtensionSettings() {
 }
 
 // Загрузка настроек
-export async function loadSettings(callbacks = {}) {
+export async function loadSettings() {
     const extensionSettings = getExtensionSettings();
     
     // Убеждаемся, что все поля из defaultSettings инициализированы
@@ -39,36 +42,27 @@ export async function loadSettings(callbacks = {}) {
     $("#kv-cache-show-notifications").prop("checked", extensionSettings.showNotifications).trigger("input");
     $("#kv-cache-clear-on-chat-change").prop("checked", extensionSettings.clearOnChatChange).trigger("input");
     
-    // Вызываем колбэки, если они предоставлены
-    if (callbacks.onUpdateNextSaveIndicator) {
-        callbacks.onUpdateNextSaveIndicator();
-    }
-    
-    if (callbacks.onUpdateSlotsList) {
-        callbacks.onUpdateSlotsList();
-    }
+    // Обновляем индикатор и список слотов
+    updateNextSaveIndicator();
+    updateSlotsList();
 }
 
 // Обработчики для чекбоксов и полей ввода
-export function createSettingsHandlers(callbacks = {}) {
+export function createSettingsHandlers() {
     const extensionSettings = getExtensionSettings();
     
     function onEnabledChange(event) {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.enabled = value;
         saveSettingsDebounced();
-        if (callbacks.onUpdateNextSaveIndicator) {
-            callbacks.onUpdateNextSaveIndicator();
-        }
+        updateNextSaveIndicator();
     }
     
     function onSaveIntervalChange(event) {
         const value = parseInt($(event.target).val()) || 5;
         extensionSettings.saveInterval = value;
         saveSettingsDebounced();
-        if (callbacks.onUpdateNextSaveIndicator) {
-            callbacks.onUpdateNextSaveIndicator();
-        }
+        updateNextSaveIndicator();
     }
     
     function onMaxFilesChange(event) {
@@ -81,18 +75,14 @@ export function createSettingsHandlers(callbacks = {}) {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.showNotifications = value;
         saveSettingsDebounced();
-        if (callbacks.onShowToast) {
-            callbacks.onShowToast('success', `Уведомления ${value ? 'включены' : 'отключены'}`);
-        }
+        showToast('success', `Уведомления ${value ? 'включены' : 'отключены'}`);
     }
     
     function onClearOnChatChangeChange(event) {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.clearOnChatChange = value;
         saveSettingsDebounced();
-        if (callbacks.onShowToast) {
-            callbacks.onShowToast('success', `Очистка при смене чата ${value ? 'включена' : 'отключена'}`);
-        }
+        showToast('success', `Очистка при смене чата ${value ? 'включена' : 'отключена'}`);
     }
     
     return {

@@ -3,6 +3,7 @@
 import { getNormalizedChatId, normalizeCharacterName } from './utils.js';
 import { getSlotsState, findCharacterSlotIndex } from './slot-manager.js';
 import { saveCharacterCache } from './cache-operations.js';
+import { getExtensionSettings } from './settings.js';
 
 // Счетчик сообщений для каждого персонажа в каждом чата (для автосохранения)
 // Структура: { [chatId]: { [characterName]: count } }
@@ -31,9 +32,8 @@ export function resetChatCounters(chatId) {
 
 // Обновление индикатора следующего сохранения
 // Показывает минимальное оставшееся количество сообщений среди всех персонажей
-export function updateNextSaveIndicator(callbacks = {}) {
-    const { getExtensionSettings } = callbacks;
-    const extensionSettings = getExtensionSettings ? getExtensionSettings() : {};
+export function updateNextSaveIndicator() {
+    const extensionSettings = getExtensionSettings();
     
     const indicator = $("#kv-cache-next-save");
     const headerTitle = $(".kv-cache-manager-settings .inline-drawer-toggle.inline-drawer-header b");
@@ -92,9 +92,8 @@ export function updateNextSaveIndicator(callbacks = {}) {
 
 // Увеличение счетчика сообщений для конкретного персонажа
 // @param {string} characterName - Имя персонажа (будет нормализовано)
-export async function incrementMessageCounter(characterName, callbacks = {}) {
-    const { getExtensionSettings, onShowToast } = callbacks;
-    const extensionSettings = getExtensionSettings ? getExtensionSettings() : {};
+export async function incrementMessageCounter(characterName) {
+    const extensionSettings = getExtensionSettings();
     
     if (!extensionSettings.enabled) {
         return;
@@ -119,7 +118,7 @@ export async function incrementMessageCounter(characterName, callbacks = {}) {
     
     messageCounters[chatId][normalizedName]++;
     
-    updateNextSaveIndicator(callbacks);
+    updateNextSaveIndicator();
     
     // Проверяем, нужно ли сохранить для этого персонажа
     const interval = extensionSettings.saveInterval;
@@ -132,14 +131,11 @@ export async function incrementMessageCounter(characterName, callbacks = {}) {
         if (slotIndex !== null) {
             // Запускаем автосохранение для этого персонажа
             try {
-                const success = await saveCharacterCache(normalizedName, slotIndex, {
-                    onShowToast,
-                    getExtensionSettings
-                });
+                const success = await saveCharacterCache(normalizedName, slotIndex);
                 if (success) {
                     // Сбрасываем счетчик только после успешного сохранения
                     messageCounters[chatId][normalizedName] = 0;
-                    updateNextSaveIndicator(callbacks);
+                    updateNextSaveIndicator();
                 }
             } catch (e) {
                 // При ошибке не сбрасываем счетчик, чтобы попробовать сохранить снова

@@ -1,12 +1,12 @@
 // Перехватчик генерации для KV Cache Manager
 
 import { getContext } from "../../../extensions.js";
-import { normalizeCharacterName } from './utils.js';
+import { normalizeCharacterName, formatTimestampToDate } from './utils.js';
 import { getSlotsState, acquireSlot, incrementSlotUsage } from './slot-manager.js';
 import { loadSlotCache } from './cache-operations.js';
 import { getLastCacheForCharacter } from './load-modal.js';
 import { parseSaveFilename } from './file-manager.js';
-import { formatTimestampToDate } from './utils.js';
+import { showToast } from './ui.js';
 
 // Текущий слот для генерации
 let currentSlot = null;
@@ -62,8 +62,8 @@ export function getNormalizedCharacterNameFromData(data) {
  * @param {function(boolean): void} abort - Функция для остановки генерации
  * @param {string} type - Тип генерации ('normal', 'regenerate', 'swipe', 'quiet', 'impersonate', 'continue')
  */
-export async function KVCacheManagerInterceptor(chat, contextSize, abort, type, callbacks = {}) {
-    const { onShowToast, getExtensionSettings, MIN_USAGE_FOR_SAVE = 2 } = callbacks;
+export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) {
+    const MIN_USAGE_FOR_SAVE = 2;
     
     // Пропускаем тихие генерации и impersonate
     if (type === 'quiet' || type === 'impersonate') {
@@ -79,21 +79,11 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type, 
         }
         
         const slotsState = getSlotsState();
-        currentSlot = await acquireSlot(characterName, {
-            minUsageForSave: MIN_USAGE_FOR_SAVE,
-            onSaveCharacterCache: async (charName, slotIdx) => {
-                if (callbacks.onSaveCharacterCache) {
-                    await callbacks.onSaveCharacterCache(charName, slotIdx);
-                }
-            },
-            onUpdateSlotsList: callbacks.onUpdateSlotsList
-        });
+        currentSlot = await acquireSlot(characterName, MIN_USAGE_FOR_SAVE);
         
         if (currentSlot === null) {
             console.warn(`[KV Cache Manager] Не удалось получить слот для персонажа ${characterName} при генерации`);
-            if (onShowToast) {
-                onShowToast('error', `Не удалось получить слот для персонажа ${characterName} при генерации`, 'Генерация');
-            }
+            showToast('error', `Не удалось получить слот для персонажа ${characterName} при генерации`, 'Генерация');
         } else {
             // Управление счетчиком использования происходит здесь, в перехватчике генерации
             // Загружаем кеш только если он еще не загружен в слот
@@ -102,29 +92,23 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type, 
             
             if (cacheNotLoaded) {
                 try {
-                    const cacheInfo = await getLastCacheForCharacter(characterName, true, { onShowToast }); // Только из текущего чата
+                    const cacheInfo = await getLastCacheForCharacter(characterName, true); // Только из текущего чата
                     
                     if (cacheInfo) {
-                        const loaded = await loadSlotCache(currentSlot, cacheInfo.filename, { onShowToast });
+                        const loaded = await loadSlotCache(currentSlot, cacheInfo.filename);
                         
                         if (loaded) {
                             // Форматируем дату-время из timestamp для тоста
                             const parsed = parseSaveFilename(cacheInfo.filename);
                             if (parsed && parsed.timestamp) {
                                 const dateTimeStr = formatTimestampToDate(parsed.timestamp);
-                                if (onShowToast) {
-                                    onShowToast('success', `Кеш для ${characterName} загружен (${dateTimeStr})`, 'Генерация');
-                                }
+                                showToast('success', `Кеш для ${characterName} загружен (${dateTimeStr})`, 'Генерация');
                             } else {
-                                if (onShowToast) {
-                                    onShowToast('success', `Кеш для ${characterName} загружен`, 'Генерация');
-                                }
+                                showToast('success', `Кеш для ${characterName} загружен`, 'Генерация');
                             }
                             console.debug(`[KV Cache Manager] Кеш персонажа ${characterName} успешно загружен в слот ${currentSlot} при генерации`);
                         } else {
-                            if (onShowToast) {
-                                onShowToast('warning', `Не удалось загрузить кеш для ${characterName}`, 'Генерация');
-                            }
+                            showToast('warning', `Не удалось загрузить кеш для ${characterName}`, 'Генерация');
                             console.warn(`[KV Cache Manager] Не удалось загрузить кеш для персонажа ${characterName} в слот ${currentSlot}`);
                         }
                     } else {
@@ -132,9 +116,7 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type, 
                     }
                 } catch (e) {
                     console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${characterName}:`, e);
-                    if (onShowToast) {
-                        onShowToast('error', `Ошибка при загрузке кеша для ${characterName}: ${e.message}`, 'Генерация');
-                    }
+                    showToast('error', `Ошибка при загрузке кеша для ${characterName}: ${e.message}`, 'Генерация');
                     // Не прерываем генерацию при ошибке загрузки кеша
                 }
             } else {
@@ -156,9 +138,7 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type, 
         
     } catch (error) {
         console.error('[KV Cache Manager] Ошибка в перехватчике генерации:', error);
-        if (callbacks.onShowToast) {
-            callbacks.onShowToast('error', `Ошибка при перехвате генерации: ${error.message}`, 'Генерация');
-        }
+        showToast('error', `Ошибка при перехвате генерации: ${error.message}`, 'Генерация');
     }
 }
 

@@ -2,6 +2,8 @@
 
 import FilePluginApi from './file-plugin-api.js';
 import { normalizeChatId, normalizeCharacterName, normalizeString, getNormalizedChatId, parseFilesList, sortByTimestamp } from './utils.js';
+import { showToast } from './ui.js';
+import { getExtensionSettings } from './settings.js';
 
 // Инициализация API клиента
 const filePluginApi = new FilePluginApi();
@@ -78,7 +80,7 @@ export function parseSaveFilename(filename) {
 
 // Получение списка файлов через API плагина kv_cache-manager-plugin
 // Все файлы считываются напрямую из папки сохранений, метаданные не используются
-export async function getFilesList(callbacks = {}) {
+export async function getFilesList() {
     try {
         // Обращаемся к API плагина для получения списка файлов
         const data = await filePluginApi.getFilesList();
@@ -98,9 +100,7 @@ export async function getFilesList(callbacks = {}) {
         return [];
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка получения списка файлов:', e);
-        if (callbacks.onShowToast) {
-            callbacks.onShowToast('error', 'Ошибка получения списка файлов: ' + e.message);
-        }
+        showToast('error', 'Ошибка получения списка файлов: ' + e.message);
         return [];
     }
 }
@@ -122,13 +122,14 @@ export async function deleteFile(filename) {
 // @param {Function} filterFn - функция фильтрации файлов: (file) => boolean
 // @param {string} description - описание для логов и уведомлений (например, "для персонажа CharacterName" или "для чата")
 // @param {string} context - контекст для логов (например, "персонажа CharacterName" или "чата")
-export async function rotateFiles(filterFn, description, context, options = {}) {
-    const { maxFiles, showNotifications, onShowToast } = options;
+export async function rotateFiles(filterFn, description, context) {
+    const extensionSettings = getExtensionSettings();
+    const maxFiles = extensionSettings.maxFiles || 10;
     const chatId = getNormalizedChatId();
     
     try {
         // Получаем список всех файлов
-        const filesList = await getFilesList({ onShowToast });
+        const filesList = await getFilesList();
         
         // Парсим файлы один раз и фильтруем
         const filteredFiles = parseFilesList(filesList, parseSaveFilename).filter(filterFn);
@@ -151,8 +152,8 @@ export async function rotateFiles(filterFn, description, context, options = {}) 
                 }
             }
             
-            if (deletedCount > 0 && showNotifications && onShowToast) {
-                onShowToast('warning', `Удалено ${deletedCount} старых автосохранений ${description}`, 'Ротация файлов');
+            if (deletedCount > 0 && extensionSettings.showNotifications) {
+                showToast('warning', `Удалено ${deletedCount} старых автосохранений ${description}`, 'Ротация файлов');
             }
         } else {
             console.debug(`[KV Cache Manager] Ротация не требуется ${context}: ${filteredFiles.length} файлов <= ${maxFiles}`);
@@ -163,7 +164,7 @@ export async function rotateFiles(filterFn, description, context, options = {}) 
 }
 
 // Ротация файлов для конкретного персонажа
-export async function rotateCharacterFiles(characterName, options = {}) {
+export async function rotateCharacterFiles(characterName) {
     if (!characterName) {
         return;
     }
@@ -181,8 +182,7 @@ export async function rotateCharacterFiles(characterName, options = {}) {
                    !file.parsed.tag; // Только автосохранения (без тега)
         },
         `для персонажа ${characterName} в чате ${chatId}`,
-        `для ${characterName}`,
-        options
+        `для ${characterName}`
     );
 }
 

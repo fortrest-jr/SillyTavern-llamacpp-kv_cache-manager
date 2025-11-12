@@ -24,25 +24,9 @@ const MIN_USAGE_FOR_SAVE = 2; // Минимальное количество и�
 // Переменная для отслеживания предыдущего чата
 let previousChatId = 'unknown';
 
-// Создаем колбэки для связи модулей
-function createCallbacks() {
-    return {
-        onShowToast: (type, message, title) => showToast(type, message, title, { getExtensionSettings }),
-        onUpdateNextSaveIndicator: () => updateNextSaveIndicator({ getExtensionSettings }),
-        onUpdateSlotsList: () => updateSlotsList({ onShowToast: (type, message, title) => showToast(type, message, title, { getExtensionSettings }) }),
-        getExtensionSettings,
-        onSaveCharacterCache: async (characterName, slotIndex) => {
-            return await saveCharacterCache(characterName, slotIndex, {
-                onShowToast: (type, message, title) => showToast(type, message, title, { getExtensionSettings }),
-                getExtensionSettings
-            });
-        }
-    };
-}
-
 // Сохранение кеша для всех персонажей, которые находятся в слотах
 // Используется перед очисткой слотов при смене чата
-async function saveAllSlotsCache(callbacks) {
+async function saveAllSlotsCache() {
     const slotsState = getSlotsState();
     const totalSlots = slotsState.length;
     
@@ -56,7 +40,7 @@ async function saveAllSlotsCache(callbacks) {
             
             // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
             if (usageCount >= MIN_USAGE_FOR_SAVE) {
-                await callbacks.onSaveCharacterCache(currentCharacter, i);
+                await saveCharacterCache(currentCharacter, i);
             } else {
                 console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${currentCharacter} (использование: ${usageCount} < ${MIN_USAGE_FOR_SAVE})`);
             }
@@ -65,37 +49,37 @@ async function saveAllSlotsCache(callbacks) {
 }
 
 // Обработчики для кнопок
-async function onSaveButtonClick(callbacks) {
-    await saveCache(true, callbacks);
+async function onSaveButtonClick() {
+    await saveCache(true);
 }
 
-async function onSaveNowButtonClick(callbacks) {
-    const success = await saveCache(false, callbacks);
+async function onSaveNowButtonClick() {
+    const success = await saveCache(false);
     if (success) {
         // Сбрасываем счётчики всех персонажей текущего чата после успешного сохранения
         const chatId = getNormalizedChatId();
         resetChatCounters(chatId);
-        updateNextSaveIndicator(callbacks);
+        updateNextSaveIndicator();
     }
 }
 
-async function onLoadButtonClick(callbacks) {
-    await openLoadModal(callbacks);
+async function onLoadButtonClick() {
+    await openLoadModal();
 }
 
-async function onReleaseAllSlotsButtonClick(callbacks) {
-    await initializeSlots(callbacks);
-    callbacks.onShowToast('success', 'Все слоты освобождены', 'Режим групповых чатов');
+async function onReleaseAllSlotsButtonClick() {
+    await initializeSlots();
+    showToast('success', 'Все слоты освобождены', 'Режим групповых чатов');
 }
 
 // Сохранение кеша для конкретного слота
-async function onSaveSlotButtonClick(event, callbacks) {
+async function onSaveSlotButtonClick(event) {
     const button = $(event.target).closest('.kv-cache-save-slot-button');
     const slotIndex = parseInt(button.data('slot-index'));
     const characterName = button.data('character-name');
     
     if (isNaN(slotIndex) || !characterName) {
-        callbacks.onShowToast('error', 'Ошибка: неверные данные слота', 'Сохранение слота');
+        showToast('error', 'Ошибка: неверные данные слота', 'Сохранение слота');
         return;
     }
     
@@ -104,7 +88,7 @@ async function onSaveSlotButtonClick(event, callbacks) {
     const slotsState = getSlotsState();
     const slot = slotsState[slotIndex];
     if (!slot || !slot.characterName || slot.characterName !== characterName) {
-        callbacks.onShowToast('error', 'Персонаж не найден в этом слоте', 'Сохранение слота');
+        showToast('error', 'Персонаж не найден в этом слоте', 'Сохранение слота');
         return;
     }
     
@@ -114,17 +98,17 @@ async function onSaveSlotButtonClick(event, callbacks) {
     button.attr('title', 'Сохранение...');
     
     try {
-        callbacks.onShowToast('info', `Сохранение кеша для ${characterName}...`, 'Сохранение слота');
-        const success = await callbacks.onSaveCharacterCache(characterName, slotIndex);
+        showToast('info', `Сохранение кеша для ${characterName}...`, 'Сохранение слота');
+        const success = await saveCharacterCache(characterName, slotIndex);
         
         if (success) {
-            callbacks.onShowToast('success', `Кеш для ${characterName} успешно сохранен`, 'Сохранение слота');
+            showToast('success', `Кеш для ${characterName} успешно сохранен`, 'Сохранение слота');
         } else {
-            callbacks.onShowToast('error', `Не удалось сохранить кеш для ${characterName}`, 'Сохранение слота');
+            showToast('error', `Не удалось сохранить кеш для ${characterName}`, 'Сохранение слота');
         }
     } catch (e) {
         console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotIndex}:`, e);
-        callbacks.onShowToast('error', `Ошибка при сохранении: ${e.message}`, 'Сохранение слота');
+        showToast('error', `Ошибка при сохранении: ${e.message}`, 'Сохранение слота');
     } finally {
         // Включаем кнопку обратно
         button.prop('disabled', false);
@@ -134,27 +118,24 @@ async function onSaveSlotButtonClick(event, callbacks) {
 
 // Функция вызывается при загрузке расширения
 jQuery(async () => {
-    // Создаем колбэки
-    const callbacks = createCallbacks();
-    
     // Загружаем HTML из файла
     const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
     $("#extensions_settings").append(settingsHtml);
 
     // Загружаем настройки при старте
-    await loadSettings(callbacks);
-    await initializeSlots(callbacks);
-    await assignCharactersToSlots(callbacks);
+    await loadSettings();
+    await initializeSlots();
+    await assignCharactersToSlots();
     
     // Инициализируем previousChatId как 'unknown' при старте
     // previousChatId больше никогда не будет присвоен 'unknown'
     previousChatId = 'unknown';
     
-    updateNextSaveIndicator(callbacks);
+    updateNextSaveIndicator();
     
     // Обновляем список слотов при запуске генерации
     eventSource.on(event_types.GENERATE_BEFORE_COMBINE_PROMPTS, async (data) => {
-        updateSlotsList(callbacks);
+        updateSlotsList();
     });
     
     // Обработчик для установки id_slot
@@ -167,18 +148,13 @@ jQuery(async () => {
     });
     
     // Регистрируем функцию-перехватчик в глобальном объекте
-    window['KVCacheManagerInterceptor'] = async (chat, contextSize, abort, type) => {
-        await KVCacheManagerInterceptor(chat, contextSize, abort, type, {
-            ...callbacks,
-            MIN_USAGE_FOR_SAVE
-        });
-    };
+    window['KVCacheManagerInterceptor'] = KVCacheManagerInterceptor;
     
     // Подписка на событие получения сообщения для автосохранения
     eventSource.on(event_types.MESSAGE_RECEIVED, async (data) => {
         // Получаем нормализованное имя персонажа из данных события
         const characterName = getNormalizedCharacterNameFromData(data);
-        await incrementMessageCounter(characterName, callbacks);
+        await incrementMessageCounter(characterName);
     });
     
     // Подписка на событие переключения чата для автозагрузки
@@ -213,20 +189,20 @@ jQuery(async () => {
         console.debug(`[KV Cache Manager] Смена чата: ${previousChatIdNormalized} -> ${currentChatId}`);
         
         // ВАЖНО: Сначала сохраняем кеш для всех персонажей, которые были в слотах
-        await saveAllSlotsCache(callbacks);
+        await saveAllSlotsCache();
         
         // Затем очищаем все слоты на сервере
-        await clearAllSlotsCache(callbacks);
+        await clearAllSlotsCache();
         
         // Распределяем персонажей по слотам (групповой режим всегда включен)
-        await assignCharactersToSlots(callbacks);
+        await assignCharactersToSlots();
     });
     
     // При переключении чата счетчик не сбрасывается - каждый чат имеет свой независимый счетчик
     // Счетчик автоматически создается при первом сообщении в новом чате
 
     // Настраиваем обработчики событий для настроек
-    const settingsHandlers = createSettingsHandlers(callbacks);
+    const settingsHandlers = createSettingsHandlers();
     $("#kv-cache-enabled").on("input", settingsHandlers.onEnabledChange);
     $("#kv-cache-save-interval").on("input", settingsHandlers.onSaveIntervalChange);
     $("#kv-cache-max-files").on("input", settingsHandlers.onMaxFilesChange);
@@ -234,24 +210,24 @@ jQuery(async () => {
     $("#kv-cache-clear-on-chat-change").on("input", settingsHandlers.onClearOnChatChangeChange);
     
     // Обработчики для кнопок
-    $("#kv-cache-save-button").on("click", () => onSaveButtonClick(callbacks));
-    $("#kv-cache-load-button").on("click", () => onLoadButtonClick(callbacks));
-    $("#kv-cache-save-now-button").on("click", () => onSaveNowButtonClick(callbacks));
+    $("#kv-cache-save-button").on("click", onSaveButtonClick);
+    $("#kv-cache-load-button").on("click", onLoadButtonClick);
+    $("#kv-cache-save-now-button").on("click", onSaveNowButtonClick);
     
     // Кнопка предзагрузки пока не реализована - отключаем
     $("#kv-cache-preload-characters-button")
         .prop("disabled", true)
         .attr("title", "Функция пока не реализована");
     
-    $("#kv-cache-release-all-slots-button").on("click", () => onReleaseAllSlotsButtonClick(callbacks));
+    $("#kv-cache-release-all-slots-button").on("click", onReleaseAllSlotsButtonClick);
     
     // Обработчик для кнопок сохранения слотов (делегирование для динамических элементов)
-    $(document).on("click", ".kv-cache-save-slot-button", (event) => onSaveSlotButtonClick(event, callbacks));
+    $(document).on("click", ".kv-cache-save-slot-button", onSaveSlotButtonClick);
     
     // Обработчики для модалки загрузки (используем делегирование для динамических элементов)
-    $(document).on("click", "#kv-cache-load-modal-close", () => closeLoadModal());
-    $(document).on("click", "#kv-cache-load-cancel-button", () => closeLoadModal());
-    $(document).on("click", "#kv-cache-load-confirm-button", () => loadSelectedCache(callbacks));
+    $(document).on("click", "#kv-cache-load-modal-close", closeLoadModal);
+    $(document).on("click", "#kv-cache-load-cancel-button", closeLoadModal);
+    $(document).on("click", "#kv-cache-load-confirm-button", loadSelectedCache);
     
     // Обработчик для текущего чата (делегирование)
     $(document).on("click", ".kv-cache-load-chat-item-current", function() {

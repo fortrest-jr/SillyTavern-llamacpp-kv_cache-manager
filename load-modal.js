@@ -1,9 +1,12 @@
 // Модальное окно загрузки для KV Cache Manager
 
-import { getNormalizedChatId, getCurrentChatId, normalizeCharacterName, formatTimestampToDate, parseFilesList, sortByTimestamp } from './utils.js';
+import { getNormalizedChatId, normalizeCharacterName, formatTimestampToDate, parseFilesList, sortByTimestamp } from './utils.js';
+import { getCurrentChatId } from "../../../../script.js";
 import { getFilesList, parseSaveFilename } from './file-manager.js';
 import { getSlotsState, acquireSlot, updateSlotsList } from './slot-manager.js';
-import { loadSlotCache } from './cache-operations.js';
+import { loadSlotCache, saveCharacterCache } from './cache-operations.js';
+import { showToast } from './ui.js';
+import { getExtensionSettings } from './settings.js';
 
 // Глобальные переменные для модалки загрузки
 // Новая структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
@@ -57,9 +60,7 @@ export function groupFilesByChatAndCharacter(files) {
 }
 
 // Открытие модалки загрузки
-export async function openLoadModal(callbacks = {}) {
-    const { onShowToast } = callbacks;
-    
+export async function openLoadModal() {
     const modal = $("#kv-cache-load-modal");
     modal.css('display', 'flex');
     
@@ -67,13 +68,11 @@ export async function openLoadModal(callbacks = {}) {
     $("#kv-cache-load-files-list").html('<div class="kv-cache-load-loading"><i class="fa-solid fa-spinner"></i> Загрузка файлов...</div>');
     
     // Получаем список файлов
-    const filesList = await getFilesList({ onShowToast });
+    const filesList = await getFilesList();
     
     if (!filesList || filesList.length === 0) {
         $("#kv-cache-load-files-list").html('<div class="kv-cache-load-empty">Не найдено сохранений для загрузки. Сначала сохраните кеш.</div>');
-        if (onShowToast) {
-            onShowToast('warning', 'Не найдено сохранений для загрузки');
-        }
+        showToast('warning', 'Не найдено сохранений для загрузки');
         return;
     }
     
@@ -320,11 +319,9 @@ export function updateLoadModalSelection() {
 // Получение последнего кеша для персонажа
 // @param {string} characterName - Нормализованное имя персонажа
 // @param {boolean} currentChatOnly - искать только в текущем чате (по умолчанию true)
-export async function getLastCacheForCharacter(characterName, currentChatOnly = true, callbacks = {}) {
-    const { onShowToast } = callbacks;
-    
+export async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
     try {
-        const filesList = await getFilesList({ onShowToast });
+        const filesList = await getFilesList();
         if (!filesList || filesList.length === 0) {
             return null;
         }
@@ -400,14 +397,11 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
 }
 
 // Загрузка выбранного кеша
-export async function loadSelectedCache(callbacks = {}) {
-    const { onShowToast, onUpdateSlotsList, getExtensionSettings } = callbacks;
+export async function loadSelectedCache() {
     const selectedCharacters = loadModalData.selectedCharacters;
     
     if (!selectedCharacters || Object.keys(selectedCharacters).length === 0) {
-        if (onShowToast) {
-            onShowToast('error', 'Персонажи не выбраны');
-        }
+        showToast('error', 'Персонажи не выбраны');
         return;
     }
     
@@ -427,17 +421,13 @@ export async function loadSelectedCache(callbacks = {}) {
     const totalSlots = slotsState.length;
     
     if (selectedCount > totalSlots) {
-        if (onShowToast) {
-            onShowToast('error', `Выбрано ${selectedCount} персонажей, но доступно только ${totalSlots} слотов. Выберите не более ${totalSlots} персонажей.`);
-        }
+        showToast('error', `Выбрано ${selectedCount} персонажей, но доступно только ${totalSlots} слотов. Выберите не более ${totalSlots} персонажей.`);
         return;
     }
     
-    if (onShowToast) {
-        onShowToast('info', `Начинаю загрузку кешей для ${Object.keys(selectedCharacters).length} персонажей...`, 'Загрузка');
-    }
+    showToast('info', `Начинаю загрузку кешей для ${Object.keys(selectedCharacters).length} персонажей...`, 'Загрузка');
     
-    const extensionSettings = getExtensionSettings ? getExtensionSettings() : {};
+    const extensionSettings = getExtensionSettings();
     const MIN_USAGE_FOR_SAVE = 2;
     
     // Загружаем кеши для каждого выбранного персонажа
@@ -470,16 +460,7 @@ export async function loadSelectedCache(callbacks = {}) {
                 // Персонаж не в слотах - выделяем новый слот по общей логике (ручная загрузка, не генерация - счетчик = 0)
                 console.debug(`[KV Cache Manager] Персонаж ${characterName} не в слотах, выделяю новый слот для загрузки кеша`);
                 console.debug(`[KV Cache Manager] Текущие слоты:`, slotsState);
-                slotIndex = await acquireSlot(normalizedName, {
-                    minUsageForSave: MIN_USAGE_FOR_SAVE,
-                    onSaveCharacterCache: async (charName, slotIdx) => {
-                        // Используем функцию из cache-operations через колбэк
-                        if (callbacks.onSaveCharacterCache) {
-                            await callbacks.onSaveCharacterCache(charName, slotIdx);
-                        }
-                    },
-                    onUpdateSlotsList
-                });
+                slotIndex = await acquireSlot(normalizedName, MIN_USAGE_FOR_SAVE);
                 
                 if (slotIndex === null) {
                     errors.push(`${characterName}: не удалось получить слот`);
@@ -490,7 +471,7 @@ export async function loadSelectedCache(callbacks = {}) {
             }
             
             // Загружаем кеш
-            const loaded = await loadSlotCache(slotIndex, fileToLoad.filename, { onShowToast });
+            const loaded = await loadSlotCache(slotIndex, fileToLoad.filename);
             
             if (loaded) {
                 loadedCount++;
@@ -508,8 +489,8 @@ export async function loadSelectedCache(callbacks = {}) {
                 const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
                 
                 // Выводим тост для каждого успешно загруженного персонажа
-                if (extensionSettings.showNotifications && onShowToast) {
-                    onShowToast('success', `Загружен кеш для ${characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
+                if (extensionSettings.showNotifications) {
+                    showToast('success', `Загружен кеш для ${characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
                 }
             } else {
                 errors.push(`${characterName}: ошибка загрузки`);
@@ -523,23 +504,15 @@ export async function loadSelectedCache(callbacks = {}) {
     // Показываем результат
     if (loadedCount > 0) {
         if (errors.length > 0) {
-            if (onShowToast) {
-                onShowToast('warning', `Загружено ${loadedCount} из ${Object.keys(selectedCharacters).length} персонажей. Ошибки: ${errors.join(', ')}`, 'Загрузка');
-            }
+            showToast('warning', `Загружено ${loadedCount} из ${Object.keys(selectedCharacters).length} персонажей. Ошибки: ${errors.join(', ')}`, 'Загрузка');
         } else {
-            if (onShowToast) {
-                onShowToast('success', `Успешно загружено ${loadedCount} персонажей`, 'Загрузка');
-            }
+            showToast('success', `Успешно загружено ${loadedCount} персонажей`, 'Загрузка');
         }
         
         // Обновляем список слотов
-        if (onUpdateSlotsList) {
-            setTimeout(() => onUpdateSlotsList(), 1000);
-        }
+        setTimeout(() => updateSlotsList(), 1000);
     } else {
-        if (onShowToast) {
-            onShowToast('error', `Не удалось загрузить кеши. Ошибки: ${errors.join(', ')}`, 'Загрузка');
-        }
+        showToast('error', `Не удалось загрузить кеши. Ошибки: ${errors.join(', ')}`, 'Загрузка');
     }
 }
 

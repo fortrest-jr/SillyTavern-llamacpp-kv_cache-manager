@@ -4,6 +4,8 @@ import { getContext } from "../../../extensions.js";
 import { getGroupMembers } from '../../../group-chats.js';
 import LlamaApi from './llama-api.js';
 import { normalizeCharacterName, getSlotsCountFromData } from './utils.js';
+import { showToast } from './ui.js';
+import { saveCharacterCache } from './cache-operations.js';
 
 // Инициализация API клиента
 const llamaApi = new LlamaApi();
@@ -17,16 +19,14 @@ export function getSlotsState() {
 }
 
 // Получение информации о всех слотах через /slots
-export async function getAllSlotsInfo(callbacks = {}) {
+export async function getAllSlotsInfo() {
     try {
         const slotsData = await llamaApi.getSlots();
         return slotsData;
     } catch (e) {
         console.debug('[KV Cache Manager] Ошибка получения информации о слотах:', e);
         const errorMessage = e.message || String(e);
-        if (callbacks.onShowToast) {
-            callbacks.onShowToast('error', `Ошибка получения информации о слотах: ${errorMessage}`);
-        }
+        showToast('error', `Ошибка получения информации о слотах: ${errorMessage}`);
         return null;
     }
 }
@@ -41,8 +41,8 @@ export function createEmptySlot() {
 }
 
 // Инициализация слотов для режима групповых чатов
-export async function initializeSlots(callbacks = {}) {
-    const slotsData = await getAllSlotsInfo(callbacks);
+export async function initializeSlots() {
+    const slotsData = await getAllSlotsInfo();
     const totalSlots = slotsData ? getSlotsCountFromData(slotsData) : 4;
     
     // Инициализируем массив объектов состояния слотов
@@ -56,9 +56,7 @@ export async function initializeSlots(callbacks = {}) {
     console.debug(`[KV Cache Manager] Инициализировано ${totalSlots} слотов для режима групповых чатов`);
     
     // Обновляем UI
-    if (callbacks.onUpdateSlotsList) {
-        callbacks.onUpdateSlotsList();
-    }
+    updateSlotsList();
 }
 
 // Получение списка нормализованных имен персонажей текущего чата
@@ -111,10 +109,10 @@ export function getNormalizedChatCharacters() {
 
 // Распределение персонажей по слотам из текущего чата
 // Очищает старых персонажей из других чатов
-export async function assignCharactersToSlots(callbacks = {}) {
+export async function assignCharactersToSlots() {
     // Убеждаемся, что слоты инициализированы
     if (slotsState.length === 0) {
-        await initializeSlots(callbacks);
+        await initializeSlots();
     }
     
     // Получаем нормализованные имена персонажей текущего чата
@@ -129,9 +127,7 @@ export async function assignCharactersToSlots(callbacks = {}) {
     
     if (chatCharacters.length === 0) {
         console.debug('[KV Cache Manager] Не найдено персонажей в текущем чате для распределения по слотам');
-        if (callbacks.onUpdateSlotsList) {
-            callbacks.onUpdateSlotsList();
-        }
+        updateSlotsList();
         return;
     }
     
@@ -150,9 +146,7 @@ export async function assignCharactersToSlots(callbacks = {}) {
     console.debug(`[KV Cache Manager] Персонажи распределены по слотам:`, slotsState);
     
     // Обновляем UI
-    if (callbacks.onUpdateSlotsList) {
-        callbacks.onUpdateSlotsList();
-    }
+    updateSlotsList();
 }
 
 // Поиск индекса слота для персонажа (если персонаж уже в слоте)
@@ -174,18 +168,16 @@ export function findCharacterSlotIndex(characterName) {
 // 3. Если пустых нет - освобождаем слот с наименьшим использованием и возвращаем его
 // Функция занимается только управлением слотами, не управляет счетчиком использования
 // @param {string} characterName - Нормализованное имя персонажа (используется как идентификатор)
-export async function acquireSlot(characterName, options = {}) {
+// @param {number} minUsageForSave - Минимальное количество использований для сохранения (по умолчанию 2)
+export async function acquireSlot(characterName, minUsageForSave = 2) {
     // characterName должен быть уже нормализован
-    const { minUsageForSave = 2, onSaveCharacterCache, onUpdateSlotsList } = options;
     
     // 1. Проверяем, есть ли персонаж уже в слоте - если да, возвращаем этот слот
     const existingIndex = findCharacterSlotIndex(characterName);
     if (existingIndex !== null) {
         // Персонаж уже в слоте - возвращаем существующий слот
         console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${existingIndex}, счетчик: ${slotsState[existingIndex].usage || 0}`);
-        if (onUpdateSlotsList) {
-            onUpdateSlotsList();
-        }
+        updateSlotsList();
         return existingIndex;
     }
     
@@ -200,9 +192,7 @@ export async function acquireSlot(characterName, options = {}) {
             cacheLoaded: false
         };
         console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в пустой слот ${freeSlotIndex}, счетчик: ${slotsState[freeSlotIndex].usage}`);
-        if (onUpdateSlotsList) {
-            onUpdateSlotsList();
-        }
+        updateSlotsList();
         return freeSlotIndex;
     }
     
@@ -231,8 +221,8 @@ export async function acquireSlot(characterName, options = {}) {
         const usageCount = evictedSlot.usage;
         
         // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум N раз
-        if (usageCount >= minUsageForSave && onSaveCharacterCache) {
-            await onSaveCharacterCache(evictedCharacter, minUsageIndex);
+        if (usageCount >= minUsageForSave) {
+            await saveCharacterCache(evictedCharacter, minUsageIndex);
         } else {
             console.debug(`[KV Cache Manager] Пропускаем сохранение кеша для ${evictedCharacter} (использование: ${usageCount} < ${minUsageForSave})`);
         }
@@ -249,16 +239,14 @@ export async function acquireSlot(characterName, options = {}) {
     
     console.debug(`[KV Cache Manager] Персонаж ${characterName} установлен в слот ${minUsageIndex}${evictedCharacter ? ` (вытеснен ${evictedCharacter}, использование: ${minUsage})` : ' (свободный слот)'}, счетчик: ${slotsState[minUsageIndex].usage}`);
     
-    if (onUpdateSlotsList) {
-        onUpdateSlotsList();
-    }
+    updateSlotsList();
     
     return minUsageIndex;
 }
 
 // Обновление UI с информацией о слотах
 // Обновление списка слотов в UI (объединенный виджет)
-export async function updateSlotsList(callbacks = {}) {
+export async function updateSlotsList() {
     const slotsListElement = $("#kv-cache-slots-list");
     if (slotsListElement.length === 0) {
         return;
@@ -266,7 +254,7 @@ export async function updateSlotsList(callbacks = {}) {
     
     try {
         // Получаем информацию о слотах для определения общего количества
-        const slotsData = await getAllSlotsInfo(callbacks);
+        const slotsData = await getAllSlotsInfo();
         const totalSlots = slotsData ? getSlotsCountFromData(slotsData) : 0;
         
         let html = '<ul style="margin: 5px 0; padding-left: 20px;">';
