@@ -1811,8 +1811,17 @@ jQuery(async () => {
                     console.debug(`[KV Cache Manager] Кеш для персонажа ${characterName} уже загружен в слот ${currentSlot}, пропускаем загрузку`);
                 }
                 
-                slotsState[currentSlot].usage++;
-                console.debug(`[KV Cache Manager] Счетчик использования для персонажа ${characterName} в слоте ${currentSlot} увеличен до: ${slotsState[currentSlot].usage}`);
+                // Увеличиваем счетчик использования только для новых генераций и регенераций
+                // При свайпе и продолжении не увеличиваем, если счетчик уже больше 0
+                const shouldIncrementUsage = (type === 'normal') || 
+                                             (slotsState[currentSlot].usage === 0);
+                
+                if (shouldIncrementUsage) {
+                    slotsState[currentSlot].usage++;
+                    console.debug(`[KV Cache Manager] Счетчик использования для персонажа ${characterName} в слоте ${currentSlot} увеличен до: ${slotsState[currentSlot].usage} (тип: ${type})`);
+                } else {
+                    console.debug(`[KV Cache Manager] Счетчик использования для персонажа ${characterName} в слоте ${currentSlot} не увеличен (тип: ${type}, текущее значение: ${slotsState[currentSlot].usage})`);
+                }
             }
             
         } catch (error) {
