@@ -1712,7 +1712,6 @@ jQuery(async () => {
     // Загружаем настройки при старте
     await loadSettings();
     await initializeSlots();
-    await assignCharactersToSlots();
     
     // Инициализируем счетчик для текущего чата
     const initialChatId = getNormalizedChatId();
