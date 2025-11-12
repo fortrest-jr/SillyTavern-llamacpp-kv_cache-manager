@@ -15,9 +15,11 @@ const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
 // Функция вызывается при загрузке расширения
 jQuery(async () => {
-    // Загружаем HTML из файла
+    // Загружаем HTML из файлов
     const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
     $("#extensions_settings").append(settingsHtml);
+    const loadModalHtml = await $.get(`${extensionFolderPath}/load-modal.html`);
+    $("body").append(loadModalHtml);
 
     // Загружаем настройки при старте
     await loadSettings();
