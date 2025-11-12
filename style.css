@@ -88,14 +88,19 @@
     cursor: not-allowed;
 }
 
-/* Стили для элементов внутри модалки загрузки (теперь используется callGenericPopup) */
+/* Стили для элементов внутри popup загрузки (теперь используется callGenericPopup) */
 #kv-cache-load-popup-content {
     min-width: 300px;
     max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 500px;
 }
 
 .kv-cache-load-search {
     margin-bottom: 10px;
+    flex-shrink: 0;
 }
 
 /* Поле поиска использует стили text_pole из SillyTavern */
@@ -103,24 +108,38 @@
 .kv-cache-load-content {
     display: flex;
     flex: 1;
-    gap: 15px;
+    gap: 0;
     overflow: hidden;
     flex-direction: row;
     min-height: 400px;
-    max-height: 60vh;
+    align-items: stretch;
 }
 
 .kv-cache-load-chats {
     width: 250px;
     min-width: 200px;
-    border-right: 1px solid var(--SmartThemeBorderColor);
+    max-height: 150px; /* Ограничиваем высоту до 2-3 строк */
     overflow-y: auto;
-    padding-right: 10px;
+    padding-right: 15px;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+/* Разделитель между чатами и файлами */
+.kv-cache-load-divider {
+    width: 2px;
+    background: var(--SmartThemeBorderColor);
+    margin: 0 15px;
+    flex-shrink: 0;
+    opacity: 0.6;
 }
 
 .kv-cache-load-files {
     flex: 1;
     overflow-y: auto;
+    min-height: 0; /* Позволяет flex элементу сжиматься */
+    display: flex;
+    flex-direction: column;
 }
 
 #kv-cache-load-files-list {
@@ -133,7 +152,8 @@
     color: var(--SmartThemeBodyColor);
     margin-top: 15px;
     padding-top: 15px;
-    border-top: 1px solid var(--SmartThemeBorderColor);
+    border-top: 2px solid var(--SmartThemeBorderColor);
+    flex-shrink: 0;
 }
 
 .kv-cache-load-chat-item {
@@ -317,19 +337,25 @@
     /* Вертикальная раскладка на мобильных */
     .kv-cache-load-content {
         flex-direction: column;
-        gap: 10px;
+        gap: 0;
         max-height: 50vh;
     }
     
     .kv-cache-load-chats {
         width: 100%;
         min-width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--SmartThemeBorderColor);
-        max-height: 220px;
+        max-height: 150px; /* Ограничиваем высоту до 2-3 строк на мобильных */
         padding-right: 0;
         padding-bottom: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 0;
+    }
+    
+    /* Разделитель в вертикальной раскладке */
+    .kv-cache-load-divider {
+        width: 100%;
+        height: 2px;
+        margin: 10px 0;
+        opacity: 0.6;
     }
     
     .kv-cache-load-files {
