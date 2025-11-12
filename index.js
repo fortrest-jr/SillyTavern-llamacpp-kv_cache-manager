@@ -98,7 +98,7 @@ function updateNextSaveIndicator() {
 }
 
 // Сохранение кеша для персонажа (автосохранение)
-// @param {string} characterName - имя персонажа
+// @param {string} characterName - Нормализованное имя персонажа
 // @param {number} slotIndex - индекс слота
 // @returns {Promise<boolean>} - true если кеш был сохранен, false если ошибка
 async function saveCharacterCache(characterName, slotIndex) {
@@ -135,6 +135,7 @@ async function saveCharacterCache(characterName, slotIndex) {
 }
 
 // Увеличение счетчика сообщений для конкретного персонажа
+// @param {string} characterName - Нормализованное имя персонажа
 async function incrementMessageCounter(characterName) {
     if (!extensionSettings.enabled) {
         return;
@@ -162,11 +163,10 @@ async function incrementMessageCounter(characterName) {
     const interval = extensionSettings.saveInterval;
     if (messageCounters[chatId][characterName] >= interval) {
         // Находим слот, в котором находится персонаж
-        // Сравниваем нормализованные имена, так как в слотах хранятся нормализованные имена
-        const normalizedName = normalizeCharacterName(characterName);
+        // characterName уже нормализован, имена в slotsState тоже нормализованы
         let slotIndex = slotsState.findIndex(slot => {
             const slotName = slot?.characterName;
-            return slotName && normalizeCharacterName(slotName) === normalizedName;
+            return slotName && slotName === characterName;
         });
         if (slotIndex === -1) {
             slotIndex = null;
@@ -321,9 +321,10 @@ function normalizeCharacterName(characterName) {
     return normalizeString(characterName, '');
 }
 
-// Получение списка персонажей текущего чата
+// Получение списка нормализованных имен персонажей текущего чата
 // Использует правильный подход SillyTavern для определения персонажей
-function getChatCharacters() {
+// ВСЕГДА возвращает нормализованные имена
+function getNormalizedChatCharacters() {
     try {
         const context = getContext();
         
@@ -338,8 +339,9 @@ function getChatCharacters() {
             // Возвращаем только имя персонажа (name2), пользователя (name1) не включаем
             const characterName = context.name2;
             if (characterName) {
-                console.debug(`[KV Cache Manager] Обычный чат, найден персонаж: ${characterName}`);
-                return [characterName];
+                const normalizedName = normalizeCharacterName(characterName);
+                console.debug(`[KV Cache Manager] Обычный чат, найден персонаж: ${characterName} (нормализовано: ${normalizedName})`);
+                return [normalizedName];
             }
             return [];
         } else {
@@ -352,18 +354,57 @@ function getChatCharacters() {
                 return [];
             }
             
-            // Извлекаем имена персонажей из массива объектов
-            const characterNames = groupMembers
+            // Извлекаем и нормализуем имена персонажей из массива объектов
+            const normalizedNames = groupMembers
                 .map(member => member?.name)
-                .filter(name => name && typeof name === 'string');
+                .filter(name => name && typeof name === 'string')
+                .map(name => normalizeCharacterName(name));
             
-            console.debug(`[KV Cache Manager] Групповой чат, найдено ${characterNames.length} персонажей:`, characterNames);
-            return characterNames;
+            console.debug(`[KV Cache Manager] Групповой чат, найдено ${normalizedNames.length} персонажей (нормализовано)`);
+            return normalizedNames;
         }
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка при получении персонажей чата:', e);
         return [];
     }
+}
+
+// Получение нормализованного имени персонажа из контекста генерации
+// @returns {string|null} - нормализованное имя персонажа или null
+function getNormalizedCharacterNameFromContext() {
+    try {
+        const context = getContext();
+        
+        if (!context || !context.characterId) {
+            return null;
+        }
+        
+        const character = context.characters[context.characterId];
+        if (!character || !character.name) {
+            return null;
+        }
+        
+        return normalizeCharacterName(character.name);
+    } catch (e) {
+        console.error('[KV Cache Manager] Ошибка при получении имени персонажа из контекста:', e);
+        return null;
+    }
+}
+
+// Получение нормализованного имени персонажа из данных события
+// @param {any} data - данные события
+// @returns {string|null} - нормализованное имя персонажа или null
+function getNormalizedCharacterNameFromData(data) {
+    if (!data) {
+        return null;
+    }
+    
+    const characterName = data?.char || data?.name || null;
+    if (!characterName || typeof characterName !== 'string') {
+        return null;
+    }
+    
+    return normalizeCharacterName(characterName);
 }
 
 // Генерация имени файла в едином формате
@@ -376,7 +417,7 @@ function getChatCharacters() {
 // @param {string} tag - тег для ручного сохранения (опционально)
 function generateSaveFilename(chatId, timestamp, characterName, tag = null) {
     const safeChatId = normalizeChatId(chatId);
-    const safeCharacterName = normalizeCharacterName(characterName);
+    const safeCharacterName = characterName;
     
     // Ручное сохранение с тегом
     if (tag) {
@@ -508,8 +549,8 @@ async function assignCharactersToSlots() {
         await initializeSlots();
     }
     
-    // Получаем персонажей текущего чата
-    const chatCharacters = await getChatCharacters();
+    // Получаем нормализованные имена персонажей текущего чата
+    const chatCharacters = getNormalizedChatCharacters();
     
     const totalSlots = slotsState.length;
     
@@ -527,10 +568,10 @@ async function assignCharactersToSlots() {
     console.debug(`[KV Cache Manager] Распределение ${chatCharacters.length} персонажей по ${totalSlots} слотам`);
     
     // Распределяем персонажей по слотам: идем по индексу, пока не закончатся либо слоты, либо персонажи
-    // Важно: храним нормализованные имена для единообразного сравнения
+    // Имена уже нормализованы из getNormalizedChatCharacters()
     for (let i = 0; i < totalSlots && i < chatCharacters.length; i++) {
         slotsState[i] = {
-            characterName: normalizeCharacterName(chatCharacters[i]),
+            characterName: chatCharacters[i],
             usage: 0, // Начальный счетчик использования
             cacheLoaded: false
         };
@@ -543,13 +584,13 @@ async function assignCharactersToSlots() {
 }
 
 // Поиск индекса слота для персонажа (если персонаж уже в слоте)
-// @param {string} characterName - Имя персонажа
+// @param {string} characterName - Нормализованное имя персонажа
 // @returns {number|null} - Индекс слота или null, если персонаж не найден в слотах
 function findCharacterSlotIndex(characterName) {
-    const normalizedName = normalizeCharacterName(characterName);
+    // characterName должен быть уже нормализован
     const index = slotsState.findIndex(slot => {
         const slotName = slot?.characterName;
-        return slotName && normalizeCharacterName(slotName) === normalizedName;
+        return slotName && slotName === characterName;
     });
     
     return index !== -1 ? index : null;
@@ -560,11 +601,9 @@ function findCharacterSlotIndex(characterName) {
 // 2. Если нет - ищем пустой слот, возвращаем его
 // 3. Если пустых нет - освобождаем слот с наименьшим использованием и возвращаем его
 // Функция занимается только управлением слотами, не управляет счетчиком использования
-// @param {string} characterName - Имя персонажа (используется как идентификатор)
+// @param {string} characterName - Нормализованное имя персонажа (используется как идентификатор)
 async function acquireSlot(characterName) {
-    
-    // Нормализуем имя персонажа для единообразного сравнения
-    const normalizedName = normalizeCharacterName(characterName);
+    // characterName должен быть уже нормализован
     
     // 1. Проверяем, есть ли персонаж уже в слоте - если да, возвращаем этот слот
     const existingIndex = findCharacterSlotIndex(characterName);
@@ -581,7 +620,7 @@ async function acquireSlot(characterName) {
         // Найден пустой слот - устанавливаем персонажа туда (храним нормализованное имя)
         // Счетчик использования всегда начинается с 0, управление счетчиком вне этой функции
         slotsState[freeSlotIndex] = {
-            characterName: normalizedName,
+            characterName: characterName,
             usage: 0,
             cacheLoaded: false
         };
@@ -624,10 +663,10 @@ async function acquireSlot(characterName) {
     }
     
     // Устанавливаем персонажа в освобожденный слот
-    // Храним нормализованное имя для единообразного сравнения
+    // Храним нормализованное имя (characterName уже нормализован)
     // Счетчик использования всегда начинается с 0, управление счетчиком вне этой функции
     slotsState[minUsageIndex] = {
-        characterName: normalizedName,
+        characterName: characterName,
         usage: 0,
         cacheLoaded: false
     };
@@ -994,8 +1033,9 @@ async function onSaveSlotButtonClick(event) {
     }
     
     // Проверяем, что слот действительно занят этим персонажем
+    // characterName из data-атрибута уже нормализован (хранится в slotsState)
     const slot = slotsState[slotIndex];
-    if (!slot || !slot.characterName || normalizeCharacterName(slot.characterName) !== normalizeCharacterName(characterName)) {
+    if (!slot || !slot.characterName || slot.characterName !== characterName) {
         showToast('error', 'Персонаж не найден в этом слоте', 'Сохранение слота');
         return;
     }
@@ -1081,18 +1121,20 @@ async function rotateFiles(filterFn, description, context) {
 }
 
 // Ротация файлов для конкретного персонажа
+// @param {string} characterName - Нормализованное имя персонажа
 async function rotateCharacterFiles(characterName) {
     if (!characterName) {
         return;
     }
     
-    const normalizedName = normalizeCharacterName(characterName);
+    // characterName уже должен быть нормализован, но нормализуем для безопасности
+    const normalizedName = characterName;
     const chatId = getNormalizedChatId();
     
     await rotateFiles(
         (file) => {
             if (!file.parsed) return false;
-            const parsedNormalizedName = normalizeCharacterName(file.parsed.characterName || '');
+            const parsedNormalizedName = file.parsed.characterName || '';
             return file.parsed.chatId === chatId && 
                    parsedNormalizedName === normalizedName &&
                    !file.parsed.tag; // Только автосохранения (без тега)
@@ -1355,15 +1397,13 @@ function renderLoadModalFiles(chatId) {
             slotsState
                 .map(slot => slot?.characterName)
                 .filter(name => name && typeof name === 'string')
-                .map(name => normalizeCharacterName(name))
+                .map(name => name)
         );
         
         filteredCharacters.sort((a, b) => {
             // Нормализуем имена для сравнения (имена из файлов уже нормализованы, но на всякий случай)
-            const normalizedA = normalizeCharacterName(a);
-            const normalizedB = normalizeCharacterName(b);
-            const aInSlots = slotsCharacters.has(normalizedA);
-            const bInSlots = slotsCharacters.has(normalizedB);
+            const aInSlots = slotsCharacters.has(a);
+            const bInSlots = slotsCharacters.has(b);
             
             // Персонажи в слотах идут первыми
             if (aInSlots && !bInSlots) return -1;
@@ -1470,7 +1510,7 @@ function updateLoadModalSelection() {
 }
 
 // Получение последнего кеша для персонажа
-// @param {string} characterName - имя персонажа
+// @param {string} characterName - Нормализованное имя персонажа
 // @param {boolean} currentChatOnly - искать только в текущем чате (по умолчанию true)
 async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
     try {
@@ -1479,8 +1519,8 @@ async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
             return null;
         }
         
-        // Нормализуем имя персонажа для сравнения
-        const normalizedCharacterName = normalizeCharacterName(characterName);
+        // characterName уже должен быть нормализован, но нормализуем для безопасности
+        const normalizedCharacterName = characterName;
         
         // Получаем chatId текущего чата для фильтрации (если нужно)
         const currentChatId = currentChatOnly ? getNormalizedChatId() : null;
@@ -1503,7 +1543,7 @@ async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
             
             // Проверяем по characterName в имени файла (основной способ для режима групповых чатов)
             if (file.parsed.characterName) {
-                const normalizedParsedName = normalizeCharacterName(file.parsed.characterName);
+                const normalizedParsedName = file.parsed.characterName;
                 if (normalizedParsedName === normalizedCharacterName) {
                     characterFiles.push({
                         filename: file.name,
@@ -1597,11 +1637,11 @@ async function loadSelectedCache() {
         try {
             let slotIndex = null;
             
-            // Проверяем, есть ли персонаж в слотах (сравниваем нормализованные имена)
-            const normalizedName = normalizeCharacterName(characterName);
+            // Проверяем, есть ли персонаж в слотах
+            // characterName из файлов уже нормализован, имена в slotsState тоже нормализованы
             slotIndex = slotsState.findIndex(slot => {
                 const slotName = slot?.characterName;
-                return slotName && normalizeCharacterName(slotName) === normalizedName;
+                return slotName && slotName === characterName;
             });
             
             if (slotIndex !== -1) {
@@ -1675,76 +1715,7 @@ async function onLoadButtonClick() {
 
 // Предзагрузка всех персонажей группы
 async function preloadAllGroupCharacters() {
-    
-    if (!characters || characters.length === 0) {
-        showToast('warning', 'Не найдено персонажей для предзагрузки');
-        return;
-    }
-    
-    showToast('info', `Начинаю предзагрузку ${characters.length} персонажей...`, 'Предзагрузка');
-    
-    let loadedCount = 0;
-    let errors = [];
-    
-    for (const character of characters) {
-        if (!character || !character.name) {
-            continue;
-        }
-        
-        const characterName = character.name;
-        console.debug(`[KV Cache Manager] Обрабатываю персонажа ${characterName}...`);
-        
-        try {
-            // Ищем кеш персонажа во всех чатах, чтобы можно было загрузить кеш из другого чата
-            const cacheInfo = await getLastCacheForCharacter(characterName, false);
-            
-            if (cacheInfo) {
-                // Получаем слот для персонажа (предзагрузка, не генерация - счетчик = 0)
-                // acquireSlot теперь async и сам сохраняет кеш вытесняемого персонажа
-                const slotIndex = await acquireSlot(characterName);
-                
-                if (slotIndex !== null) {
-                    // Загружаем кеш персонажа
-                    const loaded = await loadSlotCache(slotIndex, cacheInfo.filename);
-                    
-                    if (loaded) {
-                        loadedCount++;
-                        // Показываем информацию о чате, если кеш загружен из другого чата
-                        const parsed = parseSaveFilename(cacheInfo.filename);
-                        const currentChatId = getNormalizedChatId();
-                        const cacheChatId = parsed?.chatId;
-                        const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
-                        console.debug(`[KV Cache Manager] Предзагружен кеш для персонажа ${characterName} в слот ${slotIndex}${chatInfo}`);
-                    } else {
-                        errors.push(characterName);
-                        console.warn(`[KV Cache Manager] Не удалось загрузить кеш для персонажа ${characterName}`);
-                    }
-                } else {
-                    errors.push(characterName);
-                    console.warn(`[KV Cache Manager] Не удалось получить слот для персонажа ${characterName}`);
-                }
-            } else {
-                console.debug(`[KV Cache Manager] Кеш для персонажа ${characterName} не найден, пропускаем`);
-            }
-        } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при предзагрузке персонажа ${characterName}:`, e);
-            errors.push(characterName);
-        }
-    }
-    
-    // Обновляем UI
-    updateSlotsList();
-    
-    // Показываем результат
-    if (loadedCount > 0) {
-        if (errors.length > 0) {
-            showToast('warning', `Предзагружено ${loadedCount} из ${characters.length} персонажей. Ошибки: ${errors.length}`, 'Предзагрузка');
-        } else {
-            showToast('success', `Успешно предзагружено ${loadedCount} персонажей`, 'Предзагрузка');
-        }
-    } else {
-        showToast('warning', 'Не удалось предзагрузить ни одного персонажа', 'Предзагрузка');
-    }
+    //TODO: implement
 }
 
 async function onPreloadCharactersButtonClick() {
@@ -1807,18 +1778,12 @@ jQuery(async () => {
         
         
         try {
-            const context = getContext();
+            // Получаем нормализованное имя персонажа из контекста
+            const characterName = getNormalizedCharacterNameFromContext();
             
-            if (!context || !context.characterId) {
+            if (!characterName) {
                 return;
             }
-            
-            const character = context.characters[context.characterId];
-            if (!character || !character.name) {
-                return;
-            }
-            
-            const characterName = character.name;
             
             currentSlot = await acquireSlot(characterName);
             
@@ -1888,8 +1853,8 @@ jQuery(async () => {
     
     // Подписка на событие получения сообщения для автосохранения
     eventSource.on(event_types.MESSAGE_RECEIVED, async (data) => {
-        // Определяем персонажа из данных сообщения
-        const characterName = data?.char || data?.name || null;
+        // Получаем нормализованное имя персонажа из данных события
+        const characterName = getNormalizedCharacterNameFromData(data);
         await incrementMessageCounter(characterName);
     });
     
@@ -1958,6 +1923,12 @@ jQuery(async () => {
     $("#kv-cache-save-button").on("click", onSaveButtonClick);
     $("#kv-cache-load-button").on("click", onLoadButtonClick);
     $("#kv-cache-save-now-button").on("click", onSaveNowButtonClick);
+    
+    // Кнопка предзагрузки пока не реализована - отключаем
+    $("#kv-cache-preload-characters-button")
+        .prop("disabled", true)
+        .attr("title", "Функция пока не реализована");
+    
     $("#kv-cache-preload-characters-button").on("click", onPreloadCharactersButtonClick);
     $("#kv-cache-release-all-slots-button").on("click", onReleaseAllSlotsButtonClick);
     
