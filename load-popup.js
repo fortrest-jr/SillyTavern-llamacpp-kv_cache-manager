@@ -575,7 +575,7 @@ export async function loadSelectedCache() {
     showToast('info', `Начинаю загрузку кешей для ${Object.keys(selectedCharacters).length} персонажей...`, 'Загрузка');
     
     const extensionSettings = getExtensionSettings();
-    const MIN_USAGE_FOR_SAVE = 2;
+    const MIN_USAGE_FOR_SAVE = 1;
     
     // Шаг 1: Подготавливаем данные о выбранных персонажах и создаем Set защищенных персонажей
     // Имена персонажей уже нормализованы в groupFilesByChatAndCharacter()

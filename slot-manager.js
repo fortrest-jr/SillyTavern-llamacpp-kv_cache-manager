@@ -184,7 +184,7 @@ export function findCharacterSlotIndex(characterName) {
 // @param {string} characterName - Нормализованное имя персонажа (используется как идентификатор)
 // @param {number} minUsageForSave - Минимальное количество использований для сохранения (по умолчанию 2)
 // @param {Set<string>} protectedCharacters - Набор нормализованных имен персонажей, которых нельзя вытеснять (опционально)
-export async function acquireSlot(characterName, minUsageForSave = 2, protectedCharacters = null) {
+export async function acquireSlot(characterName, minUsageForSave = 1, protectedCharacters = null) {
     // characterName должен быть уже нормализован
     
     // 1. Проверяем, есть ли персонаж уже в слоте - если да, возвращаем этот слот
