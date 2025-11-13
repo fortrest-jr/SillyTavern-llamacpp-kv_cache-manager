@@ -2,10 +2,10 @@
 
 import { getContext } from "../../../extensions.js";
 import { generateQuietPrompt } from "../../../../script.js";
-import { acquireSlot, updateSlotsList } from './slot-manager.js';
+import { updateSlotsList } from './slot-manager.js';
 import { saveCharacterCache } from './cache-operations.js';
 import { showToast, disableAllSaveButtons, enableAllSaveButtons } from './ui.js';
-import { setPreloadingMode, setCurrentPreloadCharacter } from './generation-interceptor.js';
+import { setPreloadingMode, setCurrentPreloadCharacter, getCurrentSlot } from './generation-interceptor.js';
 import { createHiddenMessage, editMessageUsingUpdate } from './hidden-message.js';
 import { getExtensionSettings } from './settings.js';
 
@@ -193,37 +193,16 @@ export async function preloadCharactersCache(characters) {
             }
             
             try {
-                // Получаем/занимаем слот для персонажа
-                const slotIndex = await acquireSlot(normalizedName, 0); // Не сохраняем при вытеснении во время предзагрузки
-                
-                console.debug(`[KV Cache Manager] [${characterName}] Результат acquireSlot:`, {
-                    slotIndex,
-                    hasSlot: slotIndex !== null
-                });
-                
-                if (slotIndex === null) {
-                    console.error(`[KV Cache Manager] [${characterName}] Не удалось получить слот`);
-                    errors.push(`${characterName}: не удалось получить слот`);
-                    // Обновляем статус при ошибке получения слота
-                    if (statusMessageId !== null) {
-                        const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors, characterName, null);
-                        await editMessageUsingUpdate(statusMessageId, status);
-                    }
-                    continue;
-                }
-                
-                console.debug(`[KV Cache Manager] [${characterName}] Предзагрузка для персонажа в слот ${slotIndex}`);
-                
                 // Проверяем флаг отмены перед началом обработки
                 if (isCancelled) {
                     console.debug('[KV Cache Manager] Предзагрузка отменена перед обработкой персонажа');
                     break;
                 }
                 
-                // Обновляем статус после получения слота (перед началом обработки персонажа)
+                // Обновляем статус перед началом обработки персонажа
                 if (statusMessageId !== null) {
-                    const status = formatPreloadStatus(i, characters.length, preloaded, errors, characterName, slotIndex, isCancelled, statusMessageId);
-                    console.debug(`[KV Cache Manager] Обновление статуса перед персонажем ${i + 1}/${characters.length}:`, { characterName, slotIndex, statusMessageId });
+                    const status = formatPreloadStatus(i, characters.length, preloaded, errors, characterName, null, isCancelled, statusMessageId);
+                    console.debug(`[KV Cache Manager] Обновление статуса перед персонажем ${i + 1}/${characters.length}:`, { characterName, statusMessageId });
                     await editMessageUsingUpdate(statusMessageId, status);
                     // Обновляем обработчик кнопки отмены
                     updateCancelButtonHandler(statusMessageId, handleCancel);
@@ -380,18 +359,25 @@ export async function preloadCharactersCache(characters) {
                     console.debug(`[KV Cache Manager] [${characterName}] Текущая задача генерации сброшена`);
                 }
                 
-                // Сохраняем кеш для персонажа
-                console.debug(`[KV Cache Manager] [${characterName}] Сохранение кеша для персонажа в слот ${slotIndex}`);
-                const saved = await saveCharacterCache(normalizedName, slotIndex);
+                // Получаем слот из перехватчика (он был установлен при генерации)
+                const slotIndex = getCurrentSlot();
                 
-                console.debug(`[KV Cache Manager] [${characterName}] Результат сохранения кеша:`, { saved });
-                
-                if (saved) {
-                    preloaded.push(characterName);
-                    console.debug(`[KV Cache Manager] [${characterName}] Кеш успешно предзагружен`);
+                if (slotIndex !== null) {
+                    // Сохраняем кеш для персонажа
+                    console.debug(`[KV Cache Manager] [${characterName}] Сохранение кеша для персонажа в слот ${slotIndex}`);
+                    const saved = await saveCharacterCache(normalizedName, slotIndex);
+                    
+                    console.debug(`[KV Cache Manager] [${characterName}] Результат сохранения кеша:`, { saved });
+                    
+                    if (saved) {
+                        preloaded.push(characterName);
+                        console.debug(`[KV Cache Manager] [${characterName}] Кеш успешно предзагружен`);
+                    } else {
+                        console.error(`[KV Cache Manager] [${characterName}] Ошибка сохранения кеша`);
+                        errors.push(`${characterName}: ошибка сохранения кеша`);
+                    }
                 } else {
-                    console.error(`[KV Cache Manager] [${characterName}] Ошибка сохранения кеша`);
-                    errors.push(`${characterName}: ошибка сохранения кеша`);
+                    console.warn(`[KV Cache Manager] [${characterName}] Слот не получен, пропускаем сохранение кеша`);
                 }
                 
                 // Проверяем флаг отмены после обработки
@@ -461,9 +447,6 @@ export async function preloadCharactersCache(characters) {
             } else {
                 showToast('success', `Успешно предзагружено ${preloaded.length} персонажей`, 'Предзагрузка');
             }
-            
-            // Обновляем список слотов
-            setTimeout(() => updateSlotsList(), 1000);
             
             return true;
         } else {
