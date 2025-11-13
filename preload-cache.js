@@ -233,7 +233,7 @@ export async function preloadCharactersCache(characters) {
                     
                     // generateQuietPrompt возвращает промис
                     currentGenerationTask = generateQuietPrompt({
-                        forceChId: characterId,
+                        forceChId: Number(characterId),
                         responseLength: 1
                     });
                     

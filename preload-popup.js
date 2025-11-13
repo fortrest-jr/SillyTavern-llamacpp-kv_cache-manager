@@ -73,7 +73,7 @@ function getChatCharactersWithMutedStatus() {
                         ([id, char]) => char && char.name === member.name
                     );
                     if (characterEntry) {
-                        characterId = characterEntry[0];
+                        characterId = Number(characterEntry[0]);
                     }
                 }
                 
