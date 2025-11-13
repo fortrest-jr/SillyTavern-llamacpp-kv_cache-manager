@@ -183,7 +183,8 @@ export function findCharacterSlotIndex(characterName) {
 // Функция занимается только управлением слотами, не управляет счетчиком использования
 // @param {string} characterName - Нормализованное имя персонажа (используется как идентификатор)
 // @param {number} minUsageForSave - Минимальное количество использований для сохранения (по умолчанию 2)
-export async function acquireSlot(characterName, minUsageForSave = 2) {
+// @param {Set<string>} protectedCharacters - Набор нормализованных имен персонажей, которых нельзя вытеснять (опционально)
+export async function acquireSlot(characterName, minUsageForSave = 2, protectedCharacters = null) {
     // characterName должен быть уже нормализован
     
     // 1. Проверяем, есть ли персонаж уже в слоте - если да, возвращаем этот слот
@@ -211,11 +212,20 @@ export async function acquireSlot(characterName, minUsageForSave = 2) {
     }
     
     // 3. Пустых слотов нет - находим слот с наименьшим использованием и освобождаем его
+    // Пропускаем защищенных персонажей, если они указаны
     let minUsage = Infinity;
     let minUsageIndex = -1;
     
     for (let i = 0; i < slotsState.length; i++) {
-        const currentUsage = slotsState[i]?.usage;
+        const slot = slotsState[i];
+        const slotCharacterName = slot?.characterName;
+        
+        // Пропускаем защищенных персонажей
+        if (protectedCharacters && slotCharacterName && protectedCharacters.has(slotCharacterName)) {
+            continue;
+        }
+        
+        const currentUsage = slot?.usage || 0;
         if (currentUsage < minUsage) {
             minUsage = currentUsage;
             minUsageIndex = i;
@@ -223,7 +233,7 @@ export async function acquireSlot(characterName, minUsageForSave = 2) {
     }
     
     if (minUsageIndex === -1) {
-        console.warn('[KV Cache Manager] Не удалось найти слот для персонажа');
+        console.warn('[KV Cache Manager] Не удалось найти слот для персонажа (возможно, все слоты заняты защищенными персонажами)');
         return null;
     }
     

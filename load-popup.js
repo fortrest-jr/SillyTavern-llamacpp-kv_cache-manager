@@ -577,12 +577,14 @@ export async function loadSelectedCache() {
     const extensionSettings = getExtensionSettings();
     const MIN_USAGE_FOR_SAVE = 2;
     
-    // Загружаем кеши для каждого выбранного персонажа
+    // Шаг 1: Подготавливаем данные о выбранных персонажах и создаем Set защищенных персонажей
+    // Имена персонажей уже нормализованы в groupFilesByChatAndCharacter()
+    const charactersToLoad = [];
+    const protectedCharactersSet = new Set(); // Нормализованные имена всех выбранных персонажей
+    
     for (const characterName in selectedCharacters) {
         const selectedTimestamp = selectedCharacters[characterName];
         const characterFiles = chatCharacters[characterName] || [];
-        
-        // Находим файл с выбранным timestamp
         const fileToLoad = characterFiles.find(f => f.timestamp === selectedTimestamp);
         
         if (!fileToLoad) {
@@ -590,45 +592,64 @@ export async function loadSelectedCache() {
             continue;
         }
         
+        protectedCharactersSet.add(characterName);
+        charactersToLoad.push({
+            characterName: characterName,
+            fileToLoad: fileToLoad
+        });
+    }
+    
+    if (charactersToLoad.length === 0) {
+        showToast('error', 'Не найдено файлов для загрузки');
+        return;
+    }
+    
+    // Шаг 2: Распределяем всех выбранных персонажей по слотам
+    // Используем acquireSlot() с защищенными персонажами, чтобы они не вытесняли друг друга
+    // Имена персонажей уже нормализованы
+    const characterSlotMap = new Map(); // { characterName: slotIndex }
+    
+    for (const character of charactersToLoad) {
         try {
-            let slotIndex = null;
+            // acquireSlot() автоматически проверит, есть ли персонаж уже в слоте,
+            // и если нет - найдет свободный слот или вытеснит незащищенного персонажа
+            const slotIndex = await acquireSlot(character.characterName, MIN_USAGE_FOR_SAVE, protectedCharactersSet);
             
-            // Проверяем, есть ли персонаж в слотах (сравниваем нормализованные имена)
-            const normalizedName = normalizeCharacterName(characterName);
-            slotIndex = slotsState.findIndex(slot => {
-                const slotName = slot?.characterName;
-                return slotName && normalizeCharacterName(slotName) === normalizedName;
-            });
-            
-            if (slotIndex !== -1) {
-                // Персонаж уже в слотах - загружаем кеш в существующий слот
-                console.debug(`[KV Cache Manager] Персонаж ${characterName} уже в слоте ${slotIndex}, загружаю кеш в этот же слот`);
-            } else {
-                // Персонаж не в слотах - выделяем новый слот по общей логике (ручная загрузка, не генерация - счетчик = 0)
-                console.debug(`[KV Cache Manager] Персонаж ${characterName} не в слотах, выделяю новый слот для загрузки кеша`);
-                console.debug(`[KV Cache Manager] Текущие слоты:`, slotsState);
-                slotIndex = await acquireSlot(normalizedName, MIN_USAGE_FOR_SAVE);
-                
-                if (slotIndex === null) {
-                    errors.push(`${characterName}: не удалось получить слот`);
-                    continue;
-                }
-                
-                console.debug(`[KV Cache Manager] Персонаж ${characterName} помещен в слот ${slotIndex}`);
+            if (slotIndex === null) {
+                errors.push(`${character.characterName}: не удалось получить слот`);
+                continue;
             }
             
+            characterSlotMap.set(character.characterName, slotIndex);
+            console.debug(`[KV Cache Manager] Персонаж ${character.characterName} распределен в слот ${slotIndex}`);
+        } catch (e) {
+            console.error(`[KV Cache Manager] Ошибка при распределении персонажа ${character.characterName}:`, e);
+            errors.push(`${character.characterName}: ${e.message}`);
+        }
+    }
+    
+    // Шаг 3: Загружаем кеши для всех персонажей
+    for (const character of charactersToLoad) {
+        const slotIndex = characterSlotMap.get(character.characterName);
+        
+        if (slotIndex === undefined) {
+            // Ошибка уже добавлена на шаге 2
+            continue;
+        }
+        
+        try {
             // Загружаем кеш
-            const loaded = await loadSlotCache(slotIndex, fileToLoad.filename);
+            const loaded = await loadSlotCache(slotIndex, character.fileToLoad.filename);
             
             if (loaded) {
                 loadedCount++;
-                console.debug(`[KV Cache Manager] Загружен кеш для персонажа ${characterName} в слот ${slotIndex}`);
+                console.debug(`[KV Cache Manager] Загружен кеш для персонажа ${character.characterName} в слот ${slotIndex}`);
                 
                 // Парсим имя файла один раз для получения информации о чате
-                const parsed = parseSaveFilename(fileToLoad.filename);
+                const parsed = parseSaveFilename(character.fileToLoad.filename);
                 
                 // Форматируем дату-время из timestamp для тоста
-                const dateTimeStr = formatTimestampToDate(fileToLoad.timestamp);
+                const dateTimeStr = formatTimestampToDate(character.fileToLoad.timestamp);
                 
                 // Показываем информацию о чате, если кеш загружен из другого чата
                 const currentChatId = getNormalizedChatId();
@@ -637,14 +658,14 @@ export async function loadSelectedCache() {
                 
                 // Выводим тост для каждого успешно загруженного персонажа
                 if (extensionSettings.showNotifications) {
-                    showToast('success', `Загружен кеш для ${characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
+                    showToast('success', `Загружен кеш для ${character.characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
                 }
             } else {
-                errors.push(`${characterName}: ошибка загрузки`);
+                errors.push(`${character.characterName}: ошибка загрузки`);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${characterName}:`, e);
-            errors.push(`${characterName}: ${e.message}`);
+            console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${character.characterName}:`, e);
+            errors.push(`${character.characterName}: ${e.message}`);
         }
     }
     
