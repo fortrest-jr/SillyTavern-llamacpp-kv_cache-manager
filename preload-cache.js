@@ -64,7 +64,7 @@ function formatPreloadStatus(current, total, preloaded, errors, currentCharacter
     
     // Добавляем кнопку отмены, если процесс не завершен и не отменен
     if (!isCancelled && current < total && messageId !== null) {
-        status += `\n\n<button id="kv-cache-preload-cancel-btn-${messageId}" class="menu_button" style="margin-top: 10px;">Отменить</button>`;
+        status += `\n\n<button id="kv-cache-preload-cancel-btn-${messageId}" class="menu_button" type="button">Отменить</button>`;
     }
     
     status += `</div>`;
@@ -98,11 +98,58 @@ export async function preloadCharactersCache(characters) {
     const preloaded = [];
     const errors = [];
     let isCancelled = false;
+    let currentGenerationTask = null;
+    
+    // Функция для остановки генерации
+    const stopGeneration = (generationTask = null) => {
+        const task = generationTask || currentGenerationTask;
+        
+        // Пытаемся остановить через cancel метода задачи генерации
+        if (task && typeof task.cancel === 'function') {
+            try {
+                task.cancel();
+                console.debug('[KV Cache Manager] Генерация остановлена через generationTask.cancel()');
+            } catch (e) {
+                console.warn('[KV Cache Manager] Ошибка при вызове generationTask.cancel():', e);
+            }
+        }
+        
+        // Пытаемся остановить через abortController
+        if (typeof getAbortController === 'function') {
+            try {
+                const controller = getAbortController();
+                if (controller) {
+                    controller.abort();
+                    console.debug('[KV Cache Manager] Генерация остановлена через abortController');
+                }
+            } catch (e) {
+                console.warn('[KV Cache Manager] Ошибка при вызове abortController.abort():', e);
+            }
+        }
+        
+        // Альтернативный способ остановки генерации
+        if (typeof abortGeneration === 'function') {
+            try {
+                abortGeneration();
+                console.debug('[KV Cache Manager] Генерация остановлена через abortGeneration()');
+            } catch (e) {
+                console.warn('[KV Cache Manager] Ошибка при вызове abortGeneration():', e);
+            }
+        }
+    };
     
     // Функция для обработки отмены
     const handleCancel = () => {
+        if (isCancelled) {
+            return; // Уже отменено
+        }
+        
         isCancelled = true;
         console.debug('[KV Cache Manager] Предзагрузка отменена пользователем');
+        
+        // Останавливаем текущую генерацию
+        stopGeneration();
+        
         if (statusMessageId !== null) {
             const status = formatPreloadStatus(
                 preloaded.length, 
@@ -217,6 +264,16 @@ export async function preloadCharactersCache(characters) {
                     
                     // Создаем обработчик и сохраняем ссылку на него
                     const handler = () => {
+                        // Проверяем флаг отмены
+                        if (isCancelled) {
+                            clearTimeout(timeout);
+                            eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, handler);
+                            // Останавливаем генерацию при отмене
+                            stopGeneration(currentGenerationTask);
+                            reject(new Error('Отменено пользователем'));
+                            return;
+                        }
+                        
                         // Проверяем, что обработчик еще не был вызван
                         if (generationStarted) {
                             return;
@@ -229,18 +286,8 @@ export async function preloadCharactersCache(characters) {
                         eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, handler);
                         
                         // Останавливаем генерацию после обработки промпта
-                        // Пытаемся получить abortController из глобального контекста
-                        if (typeof getAbortController === 'function') {
-                            const controller = getAbortController();
-                            if (controller) {
-                                controller.abort();
-                                console.debug(`[KV Cache Manager] Генерация для ${characterName} остановлена после обработки промпта`);
-                            }
-                        } else if (typeof abortGeneration === 'function') {
-                            // Альтернативный способ остановки генерации
-                            abortGeneration();
-                            console.debug(`[KV Cache Manager] Генерация для ${characterName} остановлена после обработки промпта`);
-                        }
+                        stopGeneration(currentGenerationTask);
+                        console.debug(`[KV Cache Manager] Генерация для ${characterName} остановлена после обработки промпта`);
                         
                         resolve();
                     };
@@ -261,8 +308,8 @@ export async function preloadCharactersCache(characters) {
                     
                     // Запускаем генерацию через generateQuietPrompt
                     // generateQuietPrompt возвращает промис
-                    const generationTask = generateQuietPrompt({
-                        quietPrompt: 'Hello',
+                    currentGenerationTask = generateQuietPrompt({
+                        quietPrompt: '',
                         forceChId: characterId,
                         quietToLoud: false,
                         responseLength: 10
@@ -279,18 +326,8 @@ export async function preloadCharactersCache(characters) {
                                 if (abortHandler) {
                                     eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, abortHandler);
                                 }
-                                // Пытаемся остановить генерацию
-                                if (generationTask && typeof generationTask.cancel === 'function') {
-                                    generationTask.cancel();
-                                }
-                                if (typeof getAbortController === 'function') {
-                                    const controller = getAbortController();
-                                    if (controller) {
-                                        controller.abort();
-                                    }
-                                } else if (typeof abortGeneration === 'function') {
-                                    abortGeneration();
-                                }
+                                // Останавливаем генерацию
+                                stopGeneration(currentGenerationTask);
                                 resolve('cancelled');
                             }
                         }, 100);
@@ -310,13 +347,13 @@ export async function preloadCharactersCache(characters) {
                     // Проверяем флаг отмены после генерации
                     if (isCancelled || result === 'cancelled') {
                         console.debug('[KV Cache Manager] Предзагрузка отменена после генерации');
+                        // Дополнительная попытка остановить генерацию
+                        stopGeneration(currentGenerationTask);
                         break;
                     }
                     
-                    // Останавливаем промис генерации, если это возможно
-                    if (generationTask && typeof generationTask.cancel === 'function') {
-                        generationTask.cancel();
-                    }
+                    // Останавливаем генерацию после обработки промпта
+                    stopGeneration(currentGenerationTask);
                     
                     // Ждем немного, чтобы генерация точно остановилась
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -333,6 +370,8 @@ export async function preloadCharactersCache(characters) {
                     if (abortHandler && !generationStarted) {
                         eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, abortHandler);
                     }
+                    // Сбрасываем ссылку на задачу генерации
+                    currentGenerationTask = null;
                 }
                 
                 // Сохраняем кеш для персонажа
