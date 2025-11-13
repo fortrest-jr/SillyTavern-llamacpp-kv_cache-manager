@@ -308,19 +308,13 @@ export function updatePreloadPopupSelection(context = document) {
     }
 }
 
-// Выбрать всех персонажей (только немьюченных)
+// Выбрать всех персонажей (всех видимых, включая мьюченных)
 function selectAllCharacters(context = document) {
-    // Выбираем только немьюченных персонажей
-    preloadPopupData.characters.forEach(char => {
-        if (!char.isMuted) {
-            preloadPopupData.selectedCharacters.add(char.normalizedName);
-        }
-    });
-    
-    // Обновляем чекбоксы персонажей (только видимые)
+    // Выбираем всех видимых персонажей (включая мьюченных)
     $(context).find('.kv-cache-preload-character-checkbox').each(function() {
         const normalizedName = $(this).data('character-name');
-        if (preloadPopupData.selectedCharacters.has(normalizedName)) {
+        if (normalizedName) {
+            preloadPopupData.selectedCharacters.add(normalizedName);
             $(this).prop('checked', true);
         }
     });
