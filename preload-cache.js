@@ -99,42 +99,32 @@ export async function preloadCharactersCache(characters) {
     
     // Функция для остановки генерации
     const stopGeneration = (generationTask = null) => {
-        const task = generationTask || currentGenerationTask;
-        
-        // Пытаемся остановить через cancel метода задачи генерации
-        if (task && typeof task.cancel === 'function') {
-            try {
-                task.cancel();
-                console.debug('[KV Cache Manager] Генерация остановлена через generationTask.cancel()');
-            } catch (e) {
-                console.warn('[KV Cache Manager] Ошибка при вызове generationTask.cancel():', e);
+        try {
+            const context = getContext();
+            
+            if (!context) {
+                console.warn('[KV Cache Manager] Контекст не найден, невозможно остановить генерацию');
+                return false;
             }
-        }
-        
-        // Пытаемся остановить через abortController
-        if (typeof getAbortController === 'function') {
-            try {
-                const controller = getAbortController();
-                if (controller) {
-                    controller.abort();
-                    console.debug('[KV Cache Manager] Генерация остановлена через abortController');
-                }
-            } catch (e) {
-                console.warn('[KV Cache Manager] Ошибка при вызове abortController.abort():', e);
+            
+            if (typeof context.stopGeneration !== 'function') {
+                console.warn('[KV Cache Manager] Метод context.stopGeneration() не доступен');
+                return false;
             }
-        }
-        
-        // Альтернативный способ остановки генерации
-        if (typeof abortGeneration === 'function') {
-            try {
-                abortGeneration();
-                console.debug('[KV Cache Manager] Генерация остановлена через abortGeneration()');
-            } catch (e) {
-                console.warn('[KV Cache Manager] Ошибка при вызове abortGeneration():', e);
+            
+            const stopped = context.stopGeneration();
+            
+            if (stopped) {
+                console.debug('[KV Cache Manager] Генерация успешно остановлена через context.stopGeneration()');
+                return true;
+            } else {
+                console.warn('[KV Cache Manager] context.stopGeneration() вернул false, генерация не остановлена');
+                return false;
             }
+        } catch (e) {
+            console.error('[KV Cache Manager] Ошибка при остановке генерации через context.stopGeneration():', e);
+            return false;
         }
-
-        console.debug('[KV Cache Manager] Генерация не остановлена');
     };
     
     // Функция для обработки отмены
@@ -147,7 +137,12 @@ export async function preloadCharactersCache(characters) {
         console.debug('[KV Cache Manager] Предзагрузка отменена пользователем');
         
         // Останавливаем текущую генерацию
-        stopGeneration();
+        const stopped = stopGeneration();
+        if (stopped) {
+            console.debug('[KV Cache Manager] Генерация успешно остановлена при отмене пользователем');
+        } else {
+            console.warn('[KV Cache Manager] Не удалось остановить генерацию при отмене пользователем');
+        }
         
         if (statusMessageId !== null) {
             const status = formatPreloadStatus(
@@ -291,7 +286,10 @@ export async function preloadCharactersCache(characters) {
                             clearTimeout(timeout);
                             eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, handler);
                             // Останавливаем генерацию при отмене
-                            stopGeneration(currentGenerationTask);
+                            const stopped = stopGeneration(currentGenerationTask);
+                            if (stopped) {
+                                console.debug(`[KV Cache Manager] [${characterName}] Генерация успешно остановлена при отмене`);
+                            }
                             reject(new Error('Отменено пользователем'));
                             return;
                         }
@@ -310,8 +308,12 @@ export async function preloadCharactersCache(characters) {
                         eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, handler);
                         
                         // Останавливаем генерацию после обработки промпта
-                        stopGeneration(currentGenerationTask);
-                        console.debug(`[KV Cache Manager] [${characterName}] Генерация остановлена после обработки промпта`);
+                        const stopped = stopGeneration(currentGenerationTask);
+                        if (stopped) {
+                            console.debug(`[KV Cache Manager] [${characterName}] Генерация успешно остановлена после обработки промпта`);
+                        } else {
+                            console.warn(`[KV Cache Manager] [${characterName}] Не удалось остановить генерацию после обработки промпта`);
+                        }
                         
                         resolve();
                     };
@@ -375,7 +377,10 @@ export async function preloadCharactersCache(characters) {
                                     eventSource.removeListener(event_types.GENERATION_AFTER_COMMANDS, abortHandler);
                                 }
                                 // Останавливаем генерацию
-                                stopGeneration(currentGenerationTask);
+                                const stopped = stopGeneration(currentGenerationTask);
+                                if (stopped) {
+                                    console.debug(`[KV Cache Manager] [${characterName}] Генерация успешно остановлена при отмене в cancelCheckInterval`);
+                                }
                                 resolve('cancelled');
                             }
                         }, 100);
@@ -413,13 +418,21 @@ export async function preloadCharactersCache(characters) {
                     if (isCancelled || result === 'cancelled') {
                         console.debug(`[KV Cache Manager] [${characterName}] Предзагрузка отменена после генерации`);
                         // Дополнительная попытка остановить генерацию
-                        stopGeneration(currentGenerationTask);
+                        const stopped = stopGeneration(currentGenerationTask);
+                        if (stopped) {
+                            console.debug(`[KV Cache Manager] [${characterName}] Генерация успешно остановлена при отмене после генерации`);
+                        }
                         break;
                     }
                     
                     // Останавливаем генерацию после обработки промпта
                     console.debug(`[KV Cache Manager] [${characterName}] Остановка генерации после обработки промпта`);
-                    stopGeneration(currentGenerationTask);
+                    const stopped = stopGeneration(currentGenerationTask);
+                    if (stopped) {
+                        console.debug(`[KV Cache Manager] [${characterName}] Генерация успешно остановлена после обработки промпта`);
+                    } else {
+                        console.warn(`[KV Cache Manager] [${characterName}] Не удалось остановить генерацию после обработки промпта`);
+                    }
                     
                     // Ждем немного, чтобы генерация точно остановилась
                     await new Promise(resolve => setTimeout(resolve, 500));
