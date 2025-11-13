@@ -393,7 +393,7 @@ export async function preloadCharactersCache(characters) {
                         // Слот для следующего персонажа еще не получен, поэтому null
                     }
                     const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors, nextCharacterName, nextSlotIndex, isCancelled, statusMessageId);
-                    console.debug(`[KV Cache Manager] Обновление статуса после персонажа ${i + 1}/${characters.length}:`, { characterName, statusMessageId, saved });
+                    console.debug(`[KV Cache Manager] Обновление статуса после персонажа ${i + 1}/${characters.length}:`, { characterName, statusMessageId });
                     await editMessageUsingUpdate(statusMessageId, status);
                     // Обновляем обработчик кнопки отмены
                     updateCancelButtonHandler(statusMessageId, handleCancel);
