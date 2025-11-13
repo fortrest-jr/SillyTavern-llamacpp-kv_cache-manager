@@ -25,7 +25,7 @@ export async function createHiddenMessage(text, name = 'System') {
             gen_id: Date.now(),
             // api: 'manual',
             // model: 'hidden message',
-            isSmallSys: true,
+            // isSmallSys: true,
         },
     };
     

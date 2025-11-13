@@ -9,11 +9,23 @@ import { setPreloadingMode } from './generation-interceptor.js';
 import { createHiddenMessage, editMessageUsingUpdate } from './hidden-message.js';
 
 // Формирование текста статуса предзагрузки
-function formatPreloadStatus(current, total, preloaded, errors) {
+function formatPreloadStatus(current, total, preloaded, errors, currentCharacterName = null, currentSlotIndex = null) {
     const remaining = total - current;
     const progress = total > 0 ? Math.round((current / total) * 100) : 0;
     
-    let status = `**Предзагрузка кеша**\n\n`;
+    // Обертываем в div с выравниванием по левому краю
+    let status = `<div style="text-align: left;">\n`;
+    status += `**Предзагрузка кеша**\n\n`;
+    
+    // Добавляем имя текущего прогреваемого персонажа и слот, если указано
+    if (currentCharacterName) {
+        if (currentSlotIndex !== null && currentSlotIndex !== undefined) {
+            status += `Прогревается: **${currentCharacterName}** (слот ${currentSlotIndex})\n\n`;
+        } else {
+            status += `Прогревается: **${currentCharacterName}**\n\n`;
+        }
+    }
+    
     status += `Прогресс: ${current}/${total} (${progress}%)\n`;
     status += `Прогрето: ${preloaded.length}\n`;
     status += `Осталось: ${remaining}\n`;
@@ -31,6 +43,8 @@ function formatPreloadStatus(current, total, preloaded, errors) {
             status += `${idx + 1}. ${error}\n`;
         });
     }
+    
+    status += `</div>`;
     
     return status;
 }
@@ -84,30 +98,35 @@ export async function preloadCharactersCache(characters) {
                 errors.push(`${characterName}: не найден ID персонажа`);
                 // Обновляем статус
                 if (statusMessageId !== null) {
-                    const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors);
+                    const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors, characterName, null);
                     await editMessageUsingUpdate(statusMessageId, status);
                 }
                 continue;
             }
             
             try {
-                // Обновляем статус перед началом обработки персонажа
-                if (statusMessageId !== null) {
-                    const status = formatPreloadStatus(i, characters.length, preloaded, errors);
-                    console.debug(`[KV Cache Manager] Обновление статуса перед персонажем ${i + 1}/${characters.length}:`, { characterName, statusMessageId });
-                    await editMessageUsingUpdate(statusMessageId, status);
-                    console.debug(`[KV Cache Manager] Статус обновлен для персонажа ${characterName}`);
-                }
-                
                 // Получаем/занимаем слот для персонажа
                 const slotIndex = await acquireSlot(normalizedName, 0); // Не сохраняем при вытеснении во время предзагрузки
                 
                 if (slotIndex === null) {
                     errors.push(`${characterName}: не удалось получить слот`);
+                    // Обновляем статус при ошибке получения слота
+                    if (statusMessageId !== null) {
+                        const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors, characterName, null);
+                        await editMessageUsingUpdate(statusMessageId, status);
+                    }
                     continue;
                 }
                 
                 console.debug(`[KV Cache Manager] Предзагрузка для персонажа ${characterName} в слот ${slotIndex}`);
+                
+                // Обновляем статус после получения слота (перед началом обработки персонажа)
+                if (statusMessageId !== null) {
+                    const status = formatPreloadStatus(i, characters.length, preloaded, errors, characterName, slotIndex);
+                    console.debug(`[KV Cache Manager] Обновление статуса перед персонажем ${i + 1}/${characters.length}:`, { characterName, slotIndex, statusMessageId });
+                    await editMessageUsingUpdate(statusMessageId, status);
+                    console.debug(`[KV Cache Manager] Статус обновлен для персонажа ${characterName}`);
+                }
                 
                 // Создаем Promise для ожидания события GENERATION_AFTER_COMMANDS
                 let generationStarted = false;
@@ -208,7 +227,14 @@ export async function preloadCharactersCache(characters) {
                 
                 // Обновляем статус после обработки персонажа
                 if (statusMessageId !== null) {
-                    const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors);
+                    // Показываем имя следующего персонажа и его слот, если он есть
+                    let nextCharacterName = null;
+                    let nextSlotIndex = null;
+                    if (i + 1 < characters.length) {
+                        nextCharacterName = characters[i + 1].name;
+                        // Слот для следующего персонажа еще не получен, поэтому null
+                    }
+                    const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors, nextCharacterName, nextSlotIndex);
                     console.debug(`[KV Cache Manager] Обновление статуса после персонажа ${i + 1}/${characters.length}:`, { characterName, statusMessageId, saved });
                     await editMessageUsingUpdate(statusMessageId, status);
                     console.debug(`[KV Cache Manager] Статус обновлен после обработки ${characterName}`);
@@ -220,7 +246,9 @@ export async function preloadCharactersCache(characters) {
                 
                 // Обновляем статус при ошибке
                 if (statusMessageId !== null) {
-                    const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors);
+                    // Показываем имя следующего персонажа, если он есть
+                    const nextCharacterName = i + 1 < characters.length ? characters[i + 1].name : null;
+                    const status = formatPreloadStatus(i + 1, characters.length, preloaded, errors, nextCharacterName, null);
                     console.debug(`[KV Cache Manager] Обновление статуса при ошибке для персонажа ${i + 1}/${characters.length}:`, { characterName, statusMessageId, error: e.message });
                     await editMessageUsingUpdate(statusMessageId, status);
                     console.debug(`[KV Cache Manager] Статус обновлен после ошибки для ${characterName}`);

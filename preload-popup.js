@@ -206,12 +206,12 @@ export function renderPreloadPopupCharacters(context = document) {
                            data-character-name="${character.normalizedName}"
                            ${isSelected ? 'checked' : ''} 
                            style="margin-right: 10px;" />
-                    <div style="flex: 1;">
-                        <div>
+                    <div style="flex: 1; text-align: left;">
+                        <div style="text-align: left;">
                             <i class="fa-solid fa-user" style="margin-right: 5px;"></i>
                             ${character.name}
                         </div>
-                        ${character.isMuted ? '<div style="font-size: 0.85em; margin-top: 2px;">(мьючен)</div>' : ''}
+                        ${character.isMuted ? '<div style="font-size: 0.85em; margin-top: 2px; text-align: left;">(мьючен)</div>' : ''}
                     </div>
                 </label>
             </div>
