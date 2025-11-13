@@ -36,6 +36,7 @@ jQuery(async () => {
     $("#kv-cache-max-files").on("input", settingsHandlers.onMaxFilesChange);
     $("#kv-cache-show-notifications").on("input", settingsHandlers.onShowNotificationsChange);
     $("#kv-cache-clear-on-chat-change").on("input", settingsHandlers.onClearOnChatChangeChange);
+    $("#kv-cache-preload-timeout").on("input", settingsHandlers.onPreloadTimeoutChange);
     
     // Обработчики для кнопок
     $("#kv-cache-save-button").on("click", onSaveButtonClick);

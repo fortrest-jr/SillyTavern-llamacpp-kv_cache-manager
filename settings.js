@@ -14,7 +14,8 @@ export const defaultSettings = {
     saveInterval: 5,
     maxFiles: 10,
     showNotifications: true,
-    clearOnChatChange: true
+    clearOnChatChange: true,
+    preloadTimeout: 20
 };
 
 // Получение объекта настроек расширения
@@ -41,6 +42,7 @@ export async function loadSettings() {
     $("#kv-cache-max-files").val(extensionSettings.maxFiles).trigger("input");
     $("#kv-cache-show-notifications").prop("checked", extensionSettings.showNotifications).trigger("input");
     $("#kv-cache-clear-on-chat-change").prop("checked", extensionSettings.clearOnChatChange).trigger("input");
+    $("#kv-cache-preload-timeout").val(extensionSettings.preloadTimeout).trigger("input");
     
     // Обновляем список слотов
     updateSlotsList();
@@ -82,12 +84,19 @@ export function createSettingsHandlers() {
         showToast('success', `Очистка при смене чата ${value ? 'включена' : 'отключена'}`);
     }
     
+    function onPreloadTimeoutChange(event) {
+        const value = parseInt($(event.target).val());
+        extensionSettings.preloadTimeout = value;
+        saveSettingsDebounced();
+    }
+    
     return {
         onEnabledChange,
         onSaveIntervalChange,
         onMaxFilesChange,
         onShowNotificationsChange,
-        onClearOnChatChangeChange
+        onClearOnChatChangeChange,
+        onPreloadTimeoutChange
     };
 }
 

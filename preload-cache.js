@@ -7,6 +7,7 @@ import { saveCharacterCache } from './cache-operations.js';
 import { showToast, disableAllSaveButtons, enableAllSaveButtons } from './ui.js';
 import { setPreloadingMode, setCurrentPreloadCharacter, getNormalizedCharacterNameFromData } from './generation-interceptor.js';
 import { createHiddenMessage, editMessageUsingUpdate } from './hidden-message.js';
+import { getExtensionSettings } from './settings.js';
 
 // Обновление обработчика кнопки отмены
 function updateCancelButtonHandler(messageId, handleCancel) {
@@ -234,17 +235,22 @@ export async function preloadCharactersCache(characters) {
                 let messageReceived = false;
                 let abortHandler = null;
                 
+                // Получаем таймаут из настроек (в минутах, конвертируем в миллисекунды)
+                const extensionSettings = getExtensionSettings();
+                const timeoutMinutes = extensionSettings.preloadTimeout;
+                const timeoutMs = timeoutMinutes * 60 * 1000;
+                
                 const generationPromise = new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         if (!messageReceived) {
-                            console.warn(`[KV Cache Manager] [${characterName}] Таймаут ожидания события MESSAGE_RECEIVED (30 сек)`);
+                            console.warn(`[KV Cache Manager] [${characterName}] Таймаут ожидания события MESSAGE_RECEIVED (${timeoutMinutes} минут)`);
                             // Отписываемся от события при таймауте
                             if (abortHandler) {
                                 eventSource.removeListener(event_types.MESSAGE_RECEIVED, abortHandler);
                             }
                             reject(new Error('Таймаут ожидания сообщения'));
                         }
-                    }, 30000); // 30 секунд таймаут
+                    }, timeoutMs);
                     
                     // Создаем обработчик и сохраняем ссылку на него
                     const handler = (data) => {
