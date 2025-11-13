@@ -8,6 +8,7 @@ import { preloadCharactersCache } from './preload-cache.js';
 import { openLoadPopup } from './load-popup.js';
 import { openPreloadPopup } from './preload-popup.js';
 import { getContext } from "../../../extensions.js";
+import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../scripts/popup.js';
 
 // Показ toast-уведомления
 export function showToast(type, message, title = 'KV Cache Manager') {
@@ -82,8 +83,25 @@ export async function onLoadButtonClick() {
 }
 
 export async function onReleaseAllSlotsButtonClick() {
-    await initializeSlots();
-    showToast('success', 'Все слоты освобождены', 'Режим групповых чатов');
+    // Показываем попап подтверждения
+    const confirmationMessage = '<p style="margin: 10px 0; font-size: 14px;">Вы уверены, что хотите очистить все слоты?</p><p style="margin: 10px 0; font-size: 12px; color: var(--SmartThemeBodyColor, #888);">Все данные в слотах будут удалены.</p>';
+    
+    const result = await callGenericPopup(
+        confirmationMessage,
+        POPUP_TYPE.TEXT,
+        '',
+        {
+            okButton: 'Очистить',
+            cancelButton: true,
+            wide: false
+        }
+    );
+    
+    // Выполняем очистку только если пользователь подтвердил
+    if (result === POPUP_RESULT.AFFIRMATIVE) {
+        await initializeSlots();
+        showToast('success', 'Все слоты освобождены', 'Режим групповых чатов');
+    }
 }
 
 // Обработчик кнопки предзагрузки персонажей
