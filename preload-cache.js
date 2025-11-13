@@ -5,7 +5,7 @@ import { eventSource, event_types, generateQuietPrompt } from "../../../../scrip
 import { acquireSlot, updateSlotsList } from './slot-manager.js';
 import { saveCharacterCache } from './cache-operations.js';
 import { showToast, disableAllSaveButtons, enableAllSaveButtons } from './ui.js';
-import { setPreloadingMode } from './generation-interceptor.js';
+import { setPreloadingMode, setCurrentPreloadCharacter } from './generation-interceptor.js';
 import { createHiddenMessage, editMessageUsingUpdate } from './hidden-message.js';
 
 // Обновление обработчика кнопки отмены
@@ -331,6 +331,11 @@ export async function preloadCharactersCache(characters) {
                         break;
                     }
                     
+                    // Устанавливаем текущего персонажа для перехватчика генерации
+                    // Это нужно, т.к. контекст может быть еще не обновлен после forceChId
+                    setCurrentPreloadCharacter(normalizedName);
+                    console.debug(`[KV Cache Manager] [${characterName}] Установлен текущий персонаж для предзагрузки: ${normalizedName}`);
+                    
                     // Запускаем генерацию через generateQuietPrompt
                     console.debug(`[KV Cache Manager] [${characterName}] Запуск generateQuietPrompt:`, {
                         quietPrompt: '',
@@ -438,6 +443,9 @@ export async function preloadCharactersCache(characters) {
                         console.warn(`[KV Cache Manager] [${characterName}] Таймаут ожидания генерации`);
                     }
                 } finally {
+                    // Очищаем текущего персонажа для предзагрузки
+                    setCurrentPreloadCharacter(null);
+                    
                     console.debug(`[KV Cache Manager] [${characterName}] Блок finally, очистка:`, {
                         hasAbortHandler: !!abortHandler,
                         generationStarted,

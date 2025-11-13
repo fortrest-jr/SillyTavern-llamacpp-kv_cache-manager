@@ -14,10 +14,26 @@ let currentSlot = null;
 // Флаг режима предзагрузки
 let isPreloading = false;
 
+// Текущий персонаж для предзагрузки (используется вместо контекста, т.к. контекст может быть не обновлен)
+let currentPreloadCharacter = null;
+
 // Установка флага режима предзагрузки
 export function setPreloadingMode(enabled) {
     isPreloading = enabled;
+    if (!enabled) {
+        currentPreloadCharacter = null; // Очищаем при выключении
+    }
     console.debug(`[KV Cache Manager] Режим предзагрузки ${enabled ? 'включен' : 'выключен'}`);
+}
+
+// Установка текущего персонажа для предзагрузки
+export function setCurrentPreloadCharacter(normalizedName) {
+    currentPreloadCharacter = normalizedName;
+    if (normalizedName) {
+        console.debug(`[KV Cache Manager] Установлен текущий персонаж для предзагрузки: ${normalizedName}`);
+    } else {
+        console.debug(`[KV Cache Manager] Очищен текущий персонаж для предзагрузки`);
+    }
 }
 
 // Получение текущего слота
@@ -85,12 +101,23 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
     }
     
     try {
-        // Получаем нормализованное имя персонажа из контекста
-        const characterName = getNormalizedCharacterNameFromContext();
+        // В режиме предзагрузки для тихих генераций используем сохраненное имя персонажа
+        // вместо контекста, т.к. контекст может быть еще не обновлен после forceChId
+        let characterName;
+        if (type === 'quiet' && isPreloading && currentPreloadCharacter) {
+            characterName = currentPreloadCharacter;
+            console.debug(`[KV Cache Manager] Используем сохраненное имя персонажа для предзагрузки: ${characterName} (вместо контекста)`);
+        } else {
+            // Для обычных генераций используем контекст
+            characterName = getNormalizedCharacterNameFromContext();
+        }
         
         if (!characterName) {
+            console.warn(`[KV Cache Manager] Не удалось определить имя персонажа (type: ${type}, isPreloading: ${isPreloading}, currentPreloadCharacter: ${currentPreloadCharacter})`);
             return;
         }
+        
+        console.debug(`[KV Cache Manager] Перехватчик генерации для персонажа: ${characterName} (type: ${type})`);
         
         const slotsState = getSlotsState();
         currentSlot = await acquireSlot(characterName, MIN_USAGE_FOR_SAVE);
