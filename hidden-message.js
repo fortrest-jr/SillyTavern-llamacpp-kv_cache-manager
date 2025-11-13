@@ -1,7 +1,7 @@
 // Утилиты для работы со скрытыми сообщениями в чате
 
 import { getContext } from "../../../extensions.js";
-import { eventSource, event_types, chat, saveChatConditional, addOneMessage, getMessageTimeStamp, updateMessageBlock } from "../../../../script.js";
+import { eventSource, event_types, chat, saveChatConditional, addOneMessage, updateMessageBlock } from "../../../../script.js";
 
 
 // Создание невидимого сообщения для отслеживания прогресса
@@ -16,7 +16,7 @@ export async function createHiddenMessage(text, name = 'System') {
         name: name,
         is_user: false,
         is_system: false,
-        send_date: getMessageTimeStamp ? getMessageTimeStamp() : new Date().toISOString(),
+        send_date: context.humanizedDateTime(),
         mes: text,
         extra: {
             [IGNORE_SYMBOL]: true,
