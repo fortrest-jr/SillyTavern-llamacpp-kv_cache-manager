@@ -96,14 +96,16 @@ export function createSettingsHandlers() {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.showNotifications = value;
         saveSettingsDebounced();
-        showToast('success', `Уведомления ${value ? 'включены' : 'отключены'}`);
+        const status = value ? t`enabled` : t`disabled`;
+        showToast('success', t`Notifications ${status}`);
     }
     
     function onClearOnChatChangeChange(event) {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.clearOnChatChange = value;
         saveSettingsDebounced();
-        showToast('success', `Очистка при смене чата ${value ? 'включена' : 'отключена'}`);
+        const status = value ? t`enabled` : t`disabled`;
+        showToast('success', t`Clear on chat change ${status}`);
     }
     
     function onPreloadTimeoutChange(event) {

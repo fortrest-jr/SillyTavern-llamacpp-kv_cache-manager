@@ -44,7 +44,7 @@ export async function openPreloadPopup() {
     const characters = getChatCharactersWithMutedStatus();
     
     if (!characters || characters.length === 0) {
-        showToast('warning', 'Не найдено персонажей для предзагрузки (только для групповых чатов)');
+        showToast('warning', 'No characters found for preload (group chats only)');
         return null;
     }
     
@@ -69,7 +69,7 @@ export async function openPreloadPopup() {
     // Функция для выполнения предзагрузки
     const performPreload = async () => {
         if (preloadPopupData.selectedCharacters.size === 0) {
-            showToast('error', 'Персонажи не выбраны');
+            showToast('error', 'No characters selected');
             return false;
         }
         
@@ -85,7 +85,7 @@ export async function openPreloadPopup() {
         {
             large: true,
             allowVerticalScrolling: true,
-            okButton: 'Начать предзагрузку',
+            okButton: 'Start Preload',
             cancelButton: true,
             // Инициализация после открытия popup
             onOpen: async (popup) => {
@@ -115,7 +115,7 @@ export async function openPreloadPopup() {
                 if (popup.result === POPUP_RESULT.AFFIRMATIVE && !preloadPerformed) {
                     // Проверяем, что персонажи выбраны
                     if (preloadPopupData.selectedCharacters.size === 0) {
-                        showToast('error', 'Персонажи не выбраны');
+                        showToast('error', 'No characters selected');
                         return false; // Отменяем закрытие popup
                     }
                     // Разрешаем закрытие, предзагрузка будет выполнена в вызывающем коде
@@ -155,7 +155,7 @@ export function renderPreloadPopupCharacters(context = document) {
     const searchQuery = preloadPopupData.searchQuery.toLowerCase();
     
     if (characters.length === 0) {
-        charactersList.html('<div class="kv-cache-preload-empty">Нет персонажей для предзагрузки</div>');
+        charactersList.html(`<div class="kv-cache-preload-empty">${t`No characters for preload`}</div>`);
         return;
     }
     
@@ -167,7 +167,7 @@ export function renderPreloadPopupCharacters(context = document) {
     });
     
     if (filteredCharacters.length === 0) {
-        charactersList.html('<div class="kv-cache-preload-empty">Не найдено персонажей по запросу</div>');
+        charactersList.html(`<div class="kv-cache-preload-empty">${t`No characters found for query`}</div>`);
         return;
     }
     
@@ -191,7 +191,7 @@ export function renderPreloadPopupCharacters(context = document) {
                             <i class="fa-solid fa-user" style="margin-right: 5px;"></i>
                             ${character.name}
                         </div>
-                        ${character.isMuted ? '<div style="font-size: 0.85em; margin-top: 2px; text-align: left;">(мьючен)</div>' : ''}
+                        ${character.isMuted ? `<div style="font-size: 0.85em; margin-top: 2px; text-align: left;">${t`(muted)`}</div>` : ''}
                     </div>
                 </label>
             </div>
@@ -267,7 +267,7 @@ export function updatePreloadPopupSelection(context = document) {
     const preloadButton = preloadPopupData.currentPopup?.okButton;
     
     if (selectedCount === 0) {
-        selectedInfo.text('Персонажи не выбраны');
+        selectedInfo.text('No characters selected');
         // Отключаем кнопку "Начать предзагрузку"
         if (preloadButton) {
             preloadButton.disabled = true;
@@ -280,7 +280,8 @@ export function updatePreloadPopupSelection(context = document) {
             })
             .join(', ');
         
-        selectedInfo.html(`<strong>Выбрано:</strong> ${selectedCount} персонаж${selectedCount !== 1 ? 'ей' : ''} (${selectedNames})`);
+        const characterPlural = selectedCount !== 1 ? 's' : '';
+        selectedInfo.html(`<strong>${t`Selected: ${selectedCount} character${characterPlural} (${selectedNames})`}</strong>`);
         // Включаем кнопку "Начать предзагрузку"
         if (preloadButton) {
             preloadButton.disabled = false;

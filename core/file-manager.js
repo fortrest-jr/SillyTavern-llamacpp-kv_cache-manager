@@ -100,7 +100,7 @@ export async function getFilesList() {
         return [];
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка получения списка файлов:', e);
-        showToast('error', 'Ошибка получения списка файлов: ' + e.message);
+        showToast('error', 'Error getting file list: ' + e.message);
         return [];
     }
 }

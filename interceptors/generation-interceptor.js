@@ -71,7 +71,7 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
         currentSlot = await acquireSlot(characterName, MIN_USAGE_FOR_SAVE);
         
         if (currentSlot === null) {
-            showToast('error', `Не удалось получить слот для персонажа ${characterName} при генерации`, 'Генерация');
+            showToast('error', t`Failed to acquire slot for character ${characterName} during generation`, t`Generation`);
             return;
         }
         
@@ -92,17 +92,17 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
                         const parsed = parseSaveFilename(cacheInfo.filename);
                         if (parsed && parsed.timestamp) {
                             const dateTimeStr = formatTimestampToDate(parsed.timestamp);
-                            showToast('success', `Кеш для ${characterName} загружен (${dateTimeStr})`, 'Генерация');
+                            showToast('success', t`Cache for ${characterName} loaded (${dateTimeStr})`, t`Generation`);
                         } else {
-                            showToast('success', `Кеш для ${characterName} загружен`, 'Генерация');
+                            showToast('success', t`Cache for ${characterName} loaded`, t`Generation`);
                         }
                     } else {
-                        showToast('warning', `Не удалось загрузить кеш для ${characterName}`, 'Генерация');
+                        showToast('warning', t`Failed to load cache for ${characterName}`, t`Generation`);
                     }
                 }
             } catch (e) {
                 console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${characterName}:`, e);
-                showToast('error', `Ошибка при загрузке кеша для ${characterName}: ${e.message}`, 'Генерация');
+                showToast('error', t`Error loading cache for ${characterName}: ${e.message}`, t`Generation`);
                 // Не прерываем генерацию при ошибке загрузки кеша
             }
         }
@@ -113,7 +113,7 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
         
     } catch (error) {
         console.error('[KV Cache Manager] Ошибка в перехватчике генерации:', error);
-        showToast('error', `Ошибка при перехвате генерации: ${error.message}`, 'Генерация');
+        showToast('error', t`Error intercepting generation: ${error.message}`, t`Generation`);
     }
 }
 

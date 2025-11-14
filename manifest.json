@@ -6,9 +6,12 @@
   "generate_interceptor": "KVCacheManagerInterceptor",
   "js": "index.js",
   "css": "style.css",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "author": "fortrest-jr",
   "auto_update": true,
-  "homePage": "https://github.com/fortrest-jr/kv_cache-manager"
+  "homePage": "https://github.com/fortrest-jr/kv_cache-manager",
+  "i18n": {
+    "ru-ru": "i18n/ru-ru.json"
+  }
 }
 

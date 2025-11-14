@@ -10,7 +10,7 @@ import { loadSlotCache, saveCharacterCache } from '../core/cache-operations.js';
 import { showToast } from './ui.js';
 import { getExtensionSettings, extensionFolderPath, MIN_USAGE_FOR_SAVE } from '../settings.js';
 
-// Используем стандартный POPUP_RESULT.AFFIRMATIVE для кнопки "Загрузить"
+// Используем стандартный POPUP_RESULT.AFFIRMATIVE для кнопки "Load"
 
 // Глобальные переменные для popup загрузки
 // Новая структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
@@ -55,7 +55,7 @@ export async function openLoadPopup() {
     const filesList = await getFilesList();
     
     if (!filesList || filesList.length === 0) {
-        showToast('warning', 'Не найдено сохранений для загрузки');
+        showToast('warning', 'No saved caches found for loading');
         return;
     }
     
@@ -76,7 +76,7 @@ export async function openLoadPopup() {
     // Функция для выполнения загрузки
     const performLoad = async () => {
         if (Object.keys(loadPopupData.selectedCharacters).length === 0) {
-            showToast('error', 'Персонажи не выбраны');
+            showToast('error', 'No characters selected');
             return false;
         }
         
@@ -93,7 +93,7 @@ export async function openLoadPopup() {
         {
             large: true,
             allowVerticalScrolling: true,
-            okButton: 'Загрузить', // Используем стандартную кнопку OK с текстом "Загрузить"
+            okButton: 'Load', // Используем стандартную кнопку OK с текстом "Load"
             cancelButton: true, // Показываем стандартную кнопку Cancel
             // Инициализация после открытия popup
             onOpen: async (popup) => {
@@ -127,7 +127,7 @@ export async function openLoadPopup() {
                 if (popup.result === POPUP_RESULT.AFFIRMATIVE && !loadPerformed) {
                     // Проверяем, что персонажи выбраны
                     if (Object.keys(loadPopupData.selectedCharacters).length === 0) {
-                        showToast('error', 'Персонажи не выбраны');
+                        showToast('error', 'No characters selected');
                         return false; // Отменяем закрытие popup
                     }
                     // Выполняем загрузку
@@ -169,7 +169,7 @@ export function renderLoadPopupChats(context = document) {
     const currentCount = Object.values(currentChatCharacters).reduce((sum, files) => sum + files.length, 0);
     // Отображаем исходное имя чата (до нормализации) для читаемости
     const rawChatId = getCurrentChatId() || 'unknown';
-    $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
+    $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' ' + t`[current]`);
     $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
     // Фильтруем чаты по поисковому запросу
@@ -230,7 +230,7 @@ export function selectLoadPopupChat(chatId, context = document) {
     // Сбрасываем выбор
     loadPopupData.selectedCharacters = {};
     $(context).find("#kv-cache-load-confirm-button").prop('disabled', true);
-    $(context).find("#kv-cache-load-selected-info").text('Персонажи не выбраны');
+    $(context).find("#kv-cache-load-selected-info").text('No characters selected');
 }
 
 // Отображение персонажей выбранного чата
@@ -248,7 +248,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
     const characterNames = Object.keys(chatCharacters);
     
     if (characterNames.length === 0) {
-        filesList.html('<div class="kv-cache-load-empty">Нет файлов для этого чата</div>');
+        filesList.html(`<div class="kv-cache-load-empty">${t`No files for this chat`}</div>`);
         return;
     }
     
@@ -259,7 +259,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
     });
     
     if (filteredCharacters.length === 0) {
-        filesList.html('<div class="kv-cache-load-empty">Не найдено персонажей по запросу</div>');
+        filesList.html(`<div class="kv-cache-load-empty">${t`No characters found for query`}</div>`);
         return;
     }
     
@@ -293,6 +293,8 @@ export function renderLoadPopupFiles(chatId, context = document) {
     // Отображаем персонажей с их timestamp
     for (const characterName of filteredCharacters) {
         const characterFiles = chatCharacters[characterName];
+        const saveCount = characterFiles.length;
+        const savePlural = saveCount !== 1 ? 's' : '';
         
         const characterElement = $(`
             <div class="kv-cache-load-file-group collapsed" data-character-name="${characterName}">
@@ -302,7 +304,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
                         ${characterName}
                     </div>
                     <div class="kv-cache-load-file-group-info">
-                        <span>${characterFiles.length} сохранени${characterFiles.length !== 1 ? 'й' : 'е'}</span>
+                        <span>${t`${saveCount} save${savePlural}`}</span>
                         <i class="fa-solid fa-chevron-down kv-cache-load-file-group-toggle"></i>
                     </div>
                 </div>
@@ -315,7 +317,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
         const content = characterElement.find('.kv-cache-load-file-group-content');
         for (const file of characterFiles) {
             const dateTime = formatTimestampToDate(file.timestamp);
-            const tagLabel = file.tag ? ` [тег: ${file.tag}]` : '';
+            const tagLabel = file.tag ? t` [tag: ${file.tag}]` : '';
             
             const timestampItem = $(`
                 <div class="kv-cache-load-file-item" data-character-name="${characterName}" data-timestamp="${file.timestamp}" data-filename="${file.filename}">
@@ -392,7 +394,7 @@ export function updateLoadPopupSelection(context = document) {
     const loadButton = loadPopupData.currentPopup?.okButton;
     
     if (selectedCount === 0) {
-        selectedInfo.text('Персонажи не выбраны');
+        selectedInfo.text('No characters selected');
         // Отключаем кнопку "Загрузить" если она есть
         if (loadButton) {
             loadButton.disabled = true;
@@ -430,11 +432,11 @@ export async function loadSelectedCache() {
     const totalSlots = slotsState.length;
     
     if (selectedCount > totalSlots) {
-        showToast('error', `Выбрано ${selectedCount} персонажей, но доступно только ${totalSlots} слотов. Выберите не более ${totalSlots} персонажей.`);
+        showToast('error', t`Selected ${selectedCount} characters, but only ${totalSlots} slots available. Select no more than ${totalSlots} characters.`);
         return;
     }
     
-    showToast('info', `Начинаю загрузку кешей для ${Object.keys(selectedCharacters).length} персонажей...`, 'Загрузка');
+    showToast('info', t`Starting cache load for ${Object.keys(selectedCharacters).length} characters...`, t`Loading`);
     
     const extensionSettings = getExtensionSettings();
     
@@ -449,7 +451,7 @@ export async function loadSelectedCache() {
         const fileToLoad = characterFiles.find(f => f.timestamp === selectedTimestamp);
         
         if (!fileToLoad) {
-            errors.push(`${characterName}: файл не найден`);
+                errors.push(`${characterName}: file not found`);
             continue;
         }
         
@@ -461,7 +463,7 @@ export async function loadSelectedCache() {
     }
     
     if (charactersToLoad.length === 0) {
-        showToast('error', 'Не найдено файлов для загрузки');
+        showToast('error', 'No files found for loading');
         return;
     }
     
@@ -477,7 +479,7 @@ export async function loadSelectedCache() {
             const slotIndex = await acquireSlot(character.characterName, MIN_USAGE_FOR_SAVE, protectedCharactersSet);
             
             if (slotIndex === null) {
-                errors.push(`${character.characterName}: не удалось получить слот`);
+                errors.push(t`${character.characterName}: failed to acquire slot`);
                 continue;
             }
             
@@ -513,14 +515,14 @@ export async function loadSelectedCache() {
                 // Показываем информацию о чате, если кеш загружен из другого чата
                 const currentChatId = getNormalizedChatId();
                 const cacheChatId = parsed?.chatId;
-                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
+                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (from chat ${cacheChatId})` : '';
                 
                 // Выводим тост для каждого успешно загруженного персонажа
                 if (extensionSettings.showNotifications) {
-                    showToast('success', `Загружен кеш для ${character.characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
+                    showToast('success', t`Loaded cache for ${character.characterName} (${dateTimeStr})${chatInfo}`, t`Cache Loading`);
                 }
             } else {
-                errors.push(`${character.characterName}: ошибка загрузки`);
+                errors.push(t`${character.characterName}: load error`);
             }
         } catch (e) {
             console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${character.characterName}:`, e);
@@ -531,15 +533,15 @@ export async function loadSelectedCache() {
     // Показываем результат
     if (loadedCount > 0) {
         if (errors.length > 0) {
-            showToast('warning', `Загружено ${loadedCount} из ${Object.keys(selectedCharacters).length} персонажей. Ошибки: ${errors.join(', ')}`, 'Загрузка');
+            showToast('warning', t`Loaded ${loadedCount} of ${Object.keys(selectedCharacters).length} characters. Errors: ${errors.join(', ')}`, t`Loading`);
         } else {
-            showToast('success', `Успешно загружено ${loadedCount} персонажей`, 'Загрузка');
+            showToast('success', t`Successfully loaded ${loadedCount} characters`, t`Loading`);
         }
         
         // Обновляем список слотов (loadSlotCache() уже обновляет после каждой загрузки, но финальное обновление гарантирует актуальность)
         updateSlotsList();
     } else {
-        showToast('error', `Не удалось загрузить кеши. Ошибки: ${errors.join(', ')}`, 'Загрузка');
+        showToast('error', t`Failed to load caches. Errors: ${errors.join(', ')}`, t`Loading`);
     }
 }
 

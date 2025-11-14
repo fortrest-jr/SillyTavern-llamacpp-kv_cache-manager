@@ -41,7 +41,7 @@ export async function getAllSlotsInfo() {
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка получения информации о слотах:', e);
         const errorMessage = e.message || String(e);
-        showToast('error', `Ошибка получения информации о слотах: ${errorMessage}`);
+        showToast('error', t`Error getting slot information: ${errorMessage}`);
         return null;
     }
 }
@@ -277,7 +277,8 @@ export async function updateSlotsList() {
             
             // Кнопка сохранения (только для занятых слотов)
             if (isUsed) {
-                html += `<button class="kv-cache-save-slot-button" data-slot-index="${i}" data-character-name="${characterName}" style="background: none; cursor: pointer; padding: 2px 4px; display: inline-flex; align-items: center; color: var(--SmartThemeBodyColor, #888); margin-left: 0;" title="Сохранить кеш для ${characterName}">`;
+                const saveTitle = t`Save cache for ${characterName}`;
+                html += `<button class="kv-cache-save-slot-button" data-slot-index="${i}" data-character-name="${characterName}" style="background: none; cursor: pointer; padding: 2px 4px; display: inline-flex; align-items: center; color: var(--SmartThemeBodyColor, #888); margin-left: 0;" title="${saveTitle}">`;
                 html += `<i class="fa-solid fa-floppy-disk" style="font-size: 0.85em;"></i>`;
                 html += `</button>`;
             } else {
@@ -285,27 +286,30 @@ export async function updateSlotsList() {
                 html += `<span style="width: 20px; display: inline-block;"></span>`;
             }
             
-            html += `<span>Слот <strong>${i}</strong>: `;
+            html += `<span>${t`Slot ${i}:`} `;
             
             if (isUsed) {
                 const messageCount = slot?.usage || 0;
                 html += `<span style="color: var(--SmartThemeBodyColor, inherit);">${characterName}</span> `;
-                html += `<span style="font-size: 0.85em; color: var(--SmartThemeBodyColor, #888);">[сообщений: ${messageCount}]</span>`;
+                html += `<span style="font-size: 0.85em; color: var(--SmartThemeBodyColor, #888);">${t`[messages: ${messageCount}]`}</span>`;
             } else {
-                html += `<span style="color: #888; font-style: italic;">(свободен)</span>`;
+                html += `<span style="color: #888; font-style: italic;">${t`(free)`}</span>`;
             }
             
             html += `</span></li>`;
         }
         
+        const freeSlots = totalSlots - usedCount;
+        const usedLabel = t`Used: ${usedCount} / ${totalSlots} (free: ${freeSlots})`;
         html += '</ul>';
-        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">Занято: ${usedCount} / ${totalSlots} (свободно: ${totalSlots - usedCount})</p>`;
+        html += `<p style="margin-top: 5px; font-size: 0.9em; color: var(--SmartThemeBodyColor, inherit);">${usedLabel}</p>`;
         
         slotsListElement.html(html);
     } catch (e) {
         console.error('[KV Cache Manager] Ошибка при обновлении списка слотов:', e);
-        const errorMessage = e.message || 'Неизвестная ошибка';
-        slotsListElement.html(`<p style="color: var(--SmartThemeBodyColor, inherit);">Ошибка загрузки слотов: ${errorMessage}</p>`);
+        const errorMessage = e.message || 'Unknown error';
+        const errorText = t`Error loading slots: ${errorMessage}`;
+        slotsListElement.html(`<p style="color: var(--SmartThemeBodyColor, inherit);">${errorText}</p>`);
     }
 }
 

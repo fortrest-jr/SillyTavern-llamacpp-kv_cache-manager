@@ -1,47 +1,47 @@
 <div class="kv-cache-manager-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b>KV Cache Manager</b>
+            <b data-i18n="KV Cache Manager">KV Cache Manager</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
             <div class="kv-cache-manager-section">
-                <h3>Управление кешем</h3>
+                <h3 data-i18n="Cache Management">Cache Management</h3>
                 <div class="kv-cache-manager-field">
-                    <p><strong>Слоты:</strong></p>
+                    <p><strong data-i18n="Slots:">Slots:</strong></p>
                     <div id="kv-cache-slots-list" class="kv-cache-manager-info">
-                        <p>Загрузка...</p>
+                        <p data-i18n="Loading...">Loading...</p>
                     </div>
                 </div>
                 <div class="kv-cache-manager-field flex-container">
-                    <input id="kv-cache-save-now-button" class="menu_button" type="submit" value="Сохранить все" />
+                    <input id="kv-cache-save-now-button" class="menu_button" type="submit" data-i18n="[value]Save All" value="Save All" />
                 </div>
                 <div class="kv-cache-manager-field flex-container">
-                    <input id="kv-cache-save-button" class="menu_button" type="submit" value="Сохранить с именем" />
+                    <input id="kv-cache-save-button" class="menu_button" type="submit" data-i18n="[value]Save with Name" value="Save with Name" />
                 </div>
                 <div class="kv-cache-manager-field flex-container">
-                    <input id="kv-cache-load-button" class="menu_button" type="submit" value="Загрузить кеш" />
+                    <input id="kv-cache-load-button" class="menu_button" type="submit" data-i18n="[value]Load Cache" value="Load Cache" />
                 </div>
 
                 <div class="kv-cache-manager-field flex-container" style="margin-top: 25px;">
-                    <input id="kv-cache-release-all-slots-button" class="menu_button" type="submit" value="Очистить все слоты" />
+                    <input id="kv-cache-release-all-slots-button" class="menu_button" type="submit" data-i18n="[value]Clear All Slots" value="Clear All Slots" />
                 </div>
             </div>
 
             <hr class="sysHR" />
 
             <div class="kv-cache-manager-section">
-                <h3>Автоматическое сохранение</h3>
+                <h3 data-i18n="Auto Save">Auto Save</h3>
                 <div class="kv-cache-manager-field flex-container">
                     <input type="checkbox" id="kv-cache-enabled" />
-                    <label for="kv-cache-enabled">Включить автосохранение</label>
+                    <label for="kv-cache-enabled" data-i18n="Enable Auto Save">Enable Auto Save</label>
                 </div>
                 <div class="kv-cache-manager-field flex-container">
-                    <label for="kv-cache-save-interval">Сохранять каждые N сообщений:</label>
+                    <label for="kv-cache-save-interval" data-i18n="Save every N messages:">Save every N messages:</label>
                     <input type="number" id="kv-cache-save-interval" class="text_pole" min="1" value="5" />
                 </div>
                 <div class="kv-cache-manager-field flex-container">
-                    <label for="kv-cache-max-files">Максимум файлов на персонажа:</label>
+                    <label for="kv-cache-max-files" data-i18n="Max files per character:">Max files per character:</label>
                     <input type="number" id="kv-cache-max-files" class="text_pole" min="1" value="10" />
                 </div>
             </div>
@@ -49,12 +49,12 @@
             <hr class="sysHR" />
 
             <div class="kv-cache-manager-section">
-                <h3>Групповой кеш</h3>
+                <h3 data-i18n="Group Cache">Group Cache</h3>
                 <div class="kv-cache-manager-field flex-container">
-                    <input id="kv-cache-preload-characters-button" class="menu_button" type="submit" value="Создать кеш для персонажей группы" />
+                    <input id="kv-cache-preload-characters-button" class="menu_button" type="submit" data-i18n="[value]Create Cache for Group Characters" value="Create Cache for Group Characters" />
                 </div>
                 <div class="kv-cache-manager-field flex-container">
-                    <label for="kv-cache-preload-timeout">Таймаут прогрузки (минуты):</label>
+                    <label for="kv-cache-preload-timeout" data-i18n="Preload Timeout (minutes):">Preload Timeout (minutes):</label>
                     <input type="number" id="kv-cache-preload-timeout" class="text_pole" min="1" value="20" />
                 </div>
             </div>
@@ -62,14 +62,14 @@
             <hr class="sysHR" />
 
             <div class="kv-cache-manager-section">
-                <h3>Дополнительные настройки</h3>
+                <h3 data-i18n="Additional Settings">Additional Settings</h3>
                 <div class="kv-cache-manager-field flex-container">
                     <input type="checkbox" id="kv-cache-show-notifications" />
-                    <label for="kv-cache-show-notifications">Показывать уведомления</label>
+                    <label for="kv-cache-show-notifications" data-i18n="Show Notifications">Show Notifications</label>
                 </div>
                 <div class="kv-cache-manager-field flex-container">
                     <input type="checkbox" id="kv-cache-clear-on-chat-change" />
-                    <label for="kv-cache-clear-on-chat-change">Очищать кеш при смене чата</label>
+                    <label for="kv-cache-clear-on-chat-change" data-i18n="Clear Cache on Chat Change">Clear Cache on Chat Change</label>
                 </div>
             </div>
 

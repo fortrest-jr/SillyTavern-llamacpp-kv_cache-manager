@@ -120,7 +120,7 @@ export async function preloadCharactersCache(characters) {
                 preloaded.length, 
                 characters.length, 
                 preloaded, 
-                [...errors, 'Отменено пользователем'], 
+                [...errors, 'Cancelled by user'], 
                 null, 
                 null, 
                 true, 
@@ -275,7 +275,7 @@ export async function preloadCharactersCache(characters) {
                 } catch (e) {
                     // Если ошибка связана с остановкой генерации - это нормально
                     const isAbortError = e.message && (e.message.includes('aborted') || e.message.includes('AbortError') || e.message.includes('cancelled'));
-                    const isTimeout = e.message && e.message.includes('Таймаут');
+                    const isTimeout = e.message && (e.message.includes('Таймаут') || e.message.includes('Timeout') || e.message.includes('timeout'));
                     
                     if (!isAbortError && !isTimeout) {
                         console.error(`[KV Cache Manager] [${characterName}] Исключение в блоке генерации:`, e);
