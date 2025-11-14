@@ -249,7 +249,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
     const characterNames = Object.keys(chatCharacters);
     
     if (characterNames.length === 0) {
-        filesList.html(`<div class="kv-cache-load-empty">` + t`No files for this chat` + `</div>`);
+        filesList.html(`<div class="kv-cache-load-empty">${t`No files for this chat`}</div>`);
         return;
     }
     
@@ -260,7 +260,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
     });
     
     if (filteredCharacters.length === 0) {
-        filesList.html(`<div class="kv-cache-load-empty">` + t`No characters found for query` + `</div>`);
+        filesList.html(`<div class="kv-cache-load-empty">${t`No characters found for query`}</div>`);
         return;
     }
     
