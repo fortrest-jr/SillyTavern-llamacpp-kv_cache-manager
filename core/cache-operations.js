@@ -1,12 +1,9 @@
 // Операции с кешем для KV Cache Manager
-
-import { getContext } from "../../../../extensions.js";
-
 import LlamaApi from '../api/llama-api.js';
 import { formatTimestamp, getNormalizedChatId } from '../utils/utils.js';
 import { generateSaveFilename, rotateCharacterFiles, validateCacheFile } from './file-manager.js';
 import { getAllSlotsInfo, getSlotsState, resetSlotUsage, setSlotCacheLoaded, getSlotsCountFromData, updateSlotsList } from './slot-manager.js';
-import { showToast, disableAllSaveButtons, enableAllSaveButtons } from '../ui/ui.js';
+import { showToast, disableAllSaveButtons, enableAllSaveButtons, showTagInputPopup } from '../ui/ui.js';
 import { getExtensionSettings, MIN_USAGE_FOR_SAVE } from '../settings.js';
 
 // Инициализация API клиента
@@ -204,16 +201,10 @@ export async function saveAllSlotsCache() {
 // Сохраняет всех персонажей, которые находятся в слотах
 export async function saveCache(requestTag = false) {
     let tag = null;
-    
-    // Запрашиваем тег, если нужно
     if (requestTag) {
-        tag = prompt(t`Enter tag for saving:`);
-        if (!tag || !tag.trim()) {
-            if (tag !== null) {
-                // Пользователь нажал OK, но не ввел тег
-                showToast('error', t`Tag cannot be empty`);
-            }
-            return false; // Отмена сохранения
+        tag = await showTagInputPopup();
+        if (tag === null) {
+            return false;
         }
         tag = tag.trim();
     }

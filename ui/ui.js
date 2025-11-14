@@ -125,6 +125,90 @@ export async function onPreloadCharactersButtonClick() {
     await preloadCharactersCache(selectedCharacters);
 }
 
+// Функция для показа попапа ввода тега
+export async function showTagInputPopup() {
+    const tagInputHTML = `
+        <div style="padding: 10px;">
+            <label for="kv-cache-tag-input" style="display: block; margin-bottom: 8px;">${t`Enter tag for saving`}:</label>
+            <input 
+                type="text" 
+                id="kv-cache-tag-input" 
+                class="text_pole"
+                placeholder="${t`Enter tag for saving`}"
+                autofocus
+            />
+        </div>
+    `;
+    
+    let tagValue = null;
+    
+    const result = await callGenericPopup(
+        tagInputHTML,
+        POPUP_TYPE.TEXT,
+        '',
+        {
+            okButton: t`Save`,
+            cancelButton: true,
+            wide: false,
+            onOpen: async (popup) => {
+                // Небольшая задержка для гарантии, что DOM готов
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Используем jQuery для более надежной работы с событиями
+                const $input = $(popup.content).find('#kv-cache-tag-input');
+                const okButton = popup.okButton;
+                // Изначально отключаем кнопку, так как поле пустое
+                okButton.setAttribute('disabled', 'true');
+                
+                // Функция для обновления состояния кнопки
+                const updateButtonState = () => {
+                    const value = $input.val()?.trim() || '';
+                    if (value) {
+                        okButton.removeAttribute('disabled');
+                    } else {
+                        okButton.setAttribute('disabled', 'true');
+                    }
+                };
+                
+                // Обработчики изменения текста (используем несколько событий для надежности)
+                $input.on('input', updateButtonState);
+                $input.on('keyup', updateButtonState);
+                $input.on('paste', () => {
+                    // Задержка для обработки вставленного текста
+                    setTimeout(updateButtonState, 10);
+                });
+                
+                // Обработчик Enter для подтверждения
+                $input.on('keydown', (e) => {
+                    if (e.key === 'Enter' && !okButton.hasAttribute('disabled')) {
+                        e.preventDefault();
+                        okButton.click();
+                    }
+                });
+                
+                // Фокусируемся на поле
+                $input.focus();
+                $input.select();
+            },
+            onClosing: async (popup) => {
+                if (popup.result === POPUP_RESULT.AFFIRMATIVE) {
+                    const $input = $(popup.content).find('#kv-cache-tag-input');
+                    if ($input.length) {
+                        tagValue = $input.val()?.trim() || null;
+                    }
+                }
+                return true; // Разрешаем закрытие попапа
+            }
+        }
+    );
+    
+    if (result === POPUP_RESULT.AFFIRMATIVE) {
+        return tagValue;
+    }
+    
+    return null; // Пользователь отменил
+}
+
 // Сохранение кеша для конкретного слота
 export async function onSaveSlotButtonClick(event) {
     const button = $(event.target).closest('.kv-cache-save-slot-button');
