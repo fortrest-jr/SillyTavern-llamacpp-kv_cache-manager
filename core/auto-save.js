@@ -1,13 +1,8 @@
-// Автосохранение для KV Cache Manager
-
 import { getSlotsState, findCharacterSlotIndex, incrementSlotUsage } from './slot-manager.js';
 import { saveCharacterCache } from './cache-operations.js';
 import { getExtensionSettings } from '../settings.js';
 import { getNormalizedCharacterNameFromData } from '../utils/character-utils.js';
 
-// Проверка необходимости автосохранения и выполнение сохранения
-// @param {number} slotIndex - Индекс слота
-// @param {number} currentUsage - Текущее значение usage
 async function checkAndPerformAutoSave(slotIndex, currentUsage) {
     const extensionSettings = getExtensionSettings();
     const interval = extensionSettings.saveInterval;
@@ -24,24 +19,20 @@ async function checkAndPerformAutoSave(slotIndex, currentUsage) {
         return;
     }
     
-    // Запускаем автосохранение
-    // usage сбрасывается автоматически в saveCharacterCache после успешного сохранения
+    // usage is reset automatically in saveCharacterCache after successful save
     try {
         const success = await saveCharacterCache(characterName, slotIndex);
         if (success) {
-            // Обновляем отображение
             const { updateSlotsList } = await import('./slot-manager.js');
             updateSlotsList();
         }
     } catch (e) {
-        // При ошибке не сбрасываем usage, чтобы попробовать сохранить снова
-        console.error(`[KV Cache Manager] Ошибка при автосохранении кеша для персонажа ${characterName}:`, e);
+        // Don't reset usage on error to retry save
+        console.error(`[KV Cache Manager] Error auto-saving cache for character ${characterName}:`, e);
     }
 }
 
-// Обработка события получения сообщения для автосохранения
-// Увеличивает usage слота и проверяет необходимость автосохранения
-// Увеличивается только для normal генерации или если usage === 0
+// Increments only for normal generation or if usage === 0
 export async function processMessageForAutoSave(data) {
     const extensionSettings = getExtensionSettings();
     
@@ -49,38 +40,33 @@ export async function processMessageForAutoSave(data) {
         return;
     }
     
-    // Получаем нормализованное имя персонажа из данных события
     const characterName = getNormalizedCharacterNameFromData(data);
     
     if (!characterName) {
         return;
     }
     
-    // Находим слот персонажа
     const slotIndex = findCharacterSlotIndex(characterName);
     if (slotIndex === null) {
-        return; // Персонаж не в слоте
+        return;
     }
     
     const slotsState = getSlotsState();
     const slot = slotsState[slotIndex];
     const generationType = slot?.generationType;
     
-    // Увеличиваем usage только для normal или если usage === 0
+    // Increment usage only for normal or if usage === 0
     const shouldIncrement = (generationType === 'normal') || (slot?.usage === 0);
     
     if (shouldIncrement) {
         incrementSlotUsage(slotIndex);
         const newUsage = slot.usage;
         
-        // Проверяем необходимость автосохранения
         await checkAndPerformAutoSave(slotIndex, newUsage);
         
-        // Обновляем отображение
         const { updateSlotsList } = await import('./slot-manager.js');
         updateSlotsList();
     }
     
-    // Очищаем тип генерации после обработки
     slot.generationType = null;
 }

@@ -1,12 +1,6 @@
-// API клиент для плагина kv-cache-manager
-// Содержит только описания эндпоинтов и базовую обработку ошибок
-
 import HttpClient from './http-client.js';
 import { FILE_PLUGIN_API_TIMEOUTS } from '../settings.js';
 
-/**
- * API клиент для работы с плагином kv-cache-manager
- */
 class FilePluginApi {
     constructor() {
         this.httpClient = new HttpClient();
@@ -14,10 +8,10 @@ class FilePluginApi {
     }
 
     /**
-     * Получение CSRF токена (кэшируется)
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 5000)
-     * @returns {Promise<string|null>} - CSRF токен или null при ошибке
+     * Get CSRF token (cached)
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 5000)
+     * @returns {Promise<string|null>} CSRF token or null on error
      */
     async getCsrfToken(options = {}) {
         if (this._csrfTokenCache) {
@@ -38,18 +32,18 @@ class FilePluginApi {
                 return this._csrfTokenCache;
             }
         } catch (e) {
-            // Тихая обработка ошибки - возвращаем null
+            // Silent error handling - return null
         }
 
         return null;
     }
 
     /**
-     * Получение списка файлов
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 10000)
-     * @returns {Promise<Object|null>} - Список файлов или null при ошибке
-     * @throws {Error} - При ошибке запроса
+     * Get list of files
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 10000)
+     * @returns {Promise<Object|null>} File list or null on error
+     * @throws {Error} On request error
      */
     async getFilesList(options = {}) {
         const url = '/api/plugins/kv-cache-manager/files';
@@ -62,12 +56,12 @@ class FilePluginApi {
     }
 
     /**
-     * Удаление файла
-     * @param {string} filename - Имя файла для удаления
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 10000)
+     * Delete file
+     * @param {string} filename - Filename to delete
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 10000)
      * @returns {Promise<void>}
-     * @throws {Error} - При ошибке запроса
+     * @throws {Error} On request error
      */
     async deleteFile(filename, options = {}) {
         const url = `/api/plugins/kv-cache-manager/files/${filename}`;
@@ -76,7 +70,6 @@ class FilePluginApi {
             ...options
         };
         
-        // Получаем CSRF токен и добавляем в заголовки
         const csrfToken = await this.getCsrfToken();
         const headers = { ...requestOptions.headers };
         if (csrfToken) {

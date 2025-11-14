@@ -1,37 +1,29 @@
-// Popup загрузки для KV Cache Manager
-
 import { getCurrentChatId } from "../../../../../script.js";
-import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scripts/popup.js';
+import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../popup.js';
+import { t } from '../../../../i18n.js';
 
 import { getNormalizedChatId, formatTimestampToDate } from '../utils/utils.js';
 import { getFilesList, parseSaveFilename, groupFilesByChatAndCharacter, getLastCacheForCharacter } from '../core/file-manager.js';
 import { getSlotsState, acquireSlot, updateSlotsList } from '../core/slot-manager.js';
-import { loadSlotCache, saveCharacterCache } from '../core/cache-operations.js';
+import { loadSlotCache } from '../core/cache-operations.js';
 import { showToast } from './ui.js';
 import { getExtensionSettings, extensionFolderPath, MIN_USAGE_FOR_SAVE } from '../settings.js';
 
-// Используем стандартный POPUP_RESULT.AFFIRMATIVE для кнопки "Загрузить"
-
-// Глобальные переменные для popup загрузки
-// Новая структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
 let loadPopupData = {
-    chats: {}, // Структура: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
-    currentChatId: null, // ID текущего чата (для отображения)
-    selectedChatId: null, // ID выбранного чата в popup (для загрузки)
-    selectedCharacters: {}, // { [characterName]: timestamp } - выбранные персонажи и их timestamp
+    chats: {},
+    currentChatId: null,
+    selectedChatId: null,
+    selectedCharacters: {},
     searchQuery: '',
-    currentPopup: null // Ссылка на текущий открытый popup
+    currentPopup: null
 };
 
-// Настройка обработчиков событий для popup
 function setupLoadPopupHandlers() {
-    // Обработчик для текущего чата
     $(document).off('click', '.kv-cache-load-chat-item-current').on('click', '.kv-cache-load-chat-item-current', function() {
         const popupDlg = $(this).closest('.popup, dialog');
         selectLoadPopupChat('current', popupDlg.length ? popupDlg[0] : document);
     });
     
-    // Обработчик для других чатов (делегирование)
     $(document).off('click', '.kv-cache-load-chat-item:not(.kv-cache-load-chat-item-current)').on('click', '.kv-cache-load-chat-item:not(.kv-cache-load-chat-item-current)', function() {
         const chatId = $(this).data('chat-id');
         if (chatId) {
@@ -40,43 +32,34 @@ function setupLoadPopupHandlers() {
         }
     });
     
-    // Обработчик поиска
     $(document).off('input', '#kv-cache-load-search-input').on('input', '#kv-cache-load-search-input', function() {
         const query = $(this).val();
-        // Находим popup через closest
         const popupDlg = $(this).closest('.popup, dialog');
         updateSearchQuery(query, popupDlg.length ? popupDlg[0] : document);
     });
 }
 
-// Открытие popup загрузки
 export async function openLoadPopup() {
-    // Получаем список файлов
     const filesList = await getFilesList();
     
     if (!filesList || filesList.length === 0) {
-        showToast('warning', 'Не найдено сохранений для загрузки');
+        showToast('warning', 'No saved caches found for loading');
         return;
     }
     
-    // Группируем файлы по чатам и персонажам
     loadPopupData.chats = groupFilesByChatAndCharacter(filesList);
-    // Получаем нормализованный chatId
     loadPopupData.currentChatId = getNormalizedChatId();
-    loadPopupData.selectedChatId = null; // Сбрасываем выбранный чат
+    loadPopupData.selectedChatId = null;
     loadPopupData.selectedCharacters = {};
     loadPopupData.searchQuery = '';
     
-    // Загружаем HTML-контент из файла
     const popupHTML = await $.get(`${extensionFolderPath}/load-popup.html`);
     
-    // Флаг для отслеживания, была ли выполнена загрузка
     let loadPerformed = false;
     
-    // Функция для выполнения загрузки
     const performLoad = async () => {
         if (Object.keys(loadPopupData.selectedCharacters).length === 0) {
-            showToast('error', 'Персонажи не выбраны');
+            showToast('error', 'No characters selected');
             return false;
         }
         
@@ -85,7 +68,6 @@ export async function openLoadPopup() {
         return true;
     };
     
-    // Вызываем callGenericPopup
     const popupPromise = callGenericPopup(
         popupHTML,
         POPUP_TYPE.TEXT,
@@ -93,86 +75,69 @@ export async function openLoadPopup() {
         {
             large: true,
             allowVerticalScrolling: true,
-            okButton: 'Загрузить', // Используем стандартную кнопку OK с текстом "Загрузить"
-            cancelButton: true, // Показываем стандартную кнопку Cancel
-            // Инициализация после открытия popup
+            okButton: 'Load',
+            cancelButton: true,
             onOpen: async (popup) => {
-                // Сохраняем ссылку на popup для использования в других функциях
                 loadPopupData.currentPopup = popup;
                 
-                // Небольшая задержка для гарантии, что DOM готов
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Ищем элементы внутри popup (popup.content - это HTMLElement)
                 const popupContent = popup.content.querySelector('#kv-cache-load-popup-content');
                 if (!popupContent) {
-                    console.error('[KV Cache Manager] Не найден контент popup в', popup.content);
+                    console.error('[KV Cache Manager] Popup content not found in', popup.content);
                     return;
                 }
                 
                 setupLoadPopupHandlers();
                 
-                // Отображаем чаты и файлы (используем popup.dlg как контекст для поиска)
                 renderLoadPopupChats(popup.dlg);
                 selectLoadPopupChat('current', popup.dlg);
                 
-                // Изначально отключаем кнопку "Загрузить" (стандартная OK кнопка)
                 const loadButton = popup.okButton;
                 if (loadButton) {
                     loadButton.disabled = true;
                 }
             },
-            // Выполняем загрузку перед закрытием popup, если была нажата кнопка "Загрузить"
             onClosing: async (popup) => {
                 if (popup.result === POPUP_RESULT.AFFIRMATIVE && !loadPerformed) {
-                    // Проверяем, что персонажи выбраны
                     if (Object.keys(loadPopupData.selectedCharacters).length === 0) {
-                        showToast('error', 'Персонажи не выбраны');
-                        return false; // Отменяем закрытие popup
+                        showToast('error', 'No characters selected');
+                        return false;
                     }
-                    // Выполняем загрузку
                     await performLoad();
                 }
-                return true; // Разрешаем закрытие popup
+                return true;
             },
-            // Очищаем ссылку на popup при закрытии
             onClose: async (popup) => {
                 loadPopupData.currentPopup = null;
             }
         }
     );
     
-    // Ждём результат popup
     await popupPromise;
 }
 
-// Закрытие popup загрузки (больше не используется, оставлено для совместимости)
 export function closeLoadPopup() {
-    // Popup теперь закрывается через callGenericPopup
     loadPopupData.selectedCharacters = {};
     loadPopupData.searchQuery = '';
 }
 
-// Отображение списка чатов
 export function renderLoadPopupChats(context = document) {
     const chatsList = $(context).find("#kv-cache-load-chats-list");
     if (chatsList.length === 0) {
-        console.error('[KV Cache Manager] Не найден элемент #kv-cache-load-chats-list в контексте', context);
+        console.error('[KV Cache Manager] Element #kv-cache-load-chats-list not found in context', context);
         return;
     }
     
     const currentChatId = loadPopupData.currentChatId;
     const chats = loadPopupData.chats;
     
-    // Обновляем ID и счетчик для текущего чата
     const currentChatCharacters = chats[currentChatId] || {};
     const currentCount = Object.values(currentChatCharacters).reduce((sum, files) => sum + files.length, 0);
-    // Отображаем исходное имя чата (до нормализации) для читаемости
     const rawChatId = getCurrentChatId() || 'unknown';
-    $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' [текущий]');
+    $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-name-text").text(rawChatId + ' ' + t`[current]`);
     $(context).find(".kv-cache-load-chat-item-current .kv-cache-load-chat-count").text(currentCount > 0 ? currentCount : '-');
     
-    // Фильтруем чаты по поисковому запросу
     const searchQuery = loadPopupData.searchQuery.toLowerCase();
     const filteredChats = Object.keys(chats).filter(chatId => {
         if (chatId === currentChatId) return true;
@@ -180,10 +145,8 @@ export function renderLoadPopupChats(context = document) {
         return true;
     });
     
-    // Очищаем список
     chatsList.empty();
     
-    // Добавляем другие чаты
     for (const chatId of filteredChats) {
         if (chatId === currentChatId) continue;
         
@@ -208,12 +171,9 @@ export function renderLoadPopupChats(context = document) {
     }
 }
 
-// Выбор чата в popup
 export function selectLoadPopupChat(chatId, context = document) {
-    // Убираем активный класс со всех чатов
     $(context).find(".kv-cache-load-chat-item").removeClass('active');
     
-    // Устанавливаем активный класс и сохраняем выбранный чат
     if (chatId === 'current') {
         $(context).find(".kv-cache-load-chat-item-current").addClass('active');
         chatId = loadPopupData.currentChatId;
@@ -221,23 +181,19 @@ export function selectLoadPopupChat(chatId, context = document) {
         $(context).find(`.kv-cache-load-chat-item[data-chat-id="${chatId}"]`).addClass('active');
     }
     
-    // Сохраняем выбранный чат для использования при загрузке
     loadPopupData.selectedChatId = chatId;
     
-    // Отображаем персонажей выбранного чата
     renderLoadPopupFiles(chatId, context);
     
-    // Сбрасываем выбор
     loadPopupData.selectedCharacters = {};
     $(context).find("#kv-cache-load-confirm-button").prop('disabled', true);
-    $(context).find("#kv-cache-load-selected-info").text('Персонажи не выбраны');
+    $(context).find("#kv-cache-load-selected-info").text('No characters selected');
 }
 
-// Отображение персонажей выбранного чата
 export function renderLoadPopupFiles(chatId, context = document) {
     const filesList = $(context).find("#kv-cache-load-files-list");
     if (filesList.length === 0) {
-        console.error('[KV Cache Manager] Не найден элемент #kv-cache-load-files-list в контексте', context);
+        console.error('[KV Cache Manager] Element #kv-cache-load-files-list not found in context', context);
         return;
     }
     
@@ -248,25 +204,23 @@ export function renderLoadPopupFiles(chatId, context = document) {
     const characterNames = Object.keys(chatCharacters);
     
     if (characterNames.length === 0) {
-        filesList.html('<div class="kv-cache-load-empty">Нет файлов для этого чата</div>');
+        filesList.html(`<div class="kv-cache-load-empty">${t`No files for this chat`}</div>`);
         return;
     }
     
-    // Фильтруем персонажей по поисковому запросу
     const filteredCharacters = characterNames.filter(characterName => {
         if (!searchQuery) return true;
         return characterName.toLowerCase().includes(searchQuery);
     });
     
     if (filteredCharacters.length === 0) {
-        filesList.html('<div class="kv-cache-load-empty">Не найдено персонажей по запросу</div>');
+        filesList.html(`<div class="kv-cache-load-empty">${t`No characters found for query`}</div>`);
         return;
     }
     
-    // Сортируем персонажей: сначала те, что распределены в слоты (только для текущего чата)
+    // Sort characters: those in slots first (only for current chat)
     const isCurrentChat = chatId === loadPopupData.currentChatId;
     if (isCurrentChat) {
-        // Создаем Set нормализованных имен из слотов для корректного сравнения
         const slotsState = getSlotsState();
         const slotsCharacters = new Set(
             slotsState
@@ -275,24 +229,22 @@ export function renderLoadPopupFiles(chatId, context = document) {
         );
         
         filteredCharacters.sort((a, b) => {
-            // Имена из файлов уже нормализованы, но на всякий случай
             const aInSlots = slotsCharacters.has(a);
             const bInSlots = slotsCharacters.has(b);
             
-            // Персонажи в слотах идут первыми
             if (aInSlots && !bInSlots) return -1;
             if (!aInSlots && bInSlots) return 1;
             
-            // Если оба в слотах или оба не в слотах, сохраняем исходный порядок
             return 0;
         });
     }
     
     filesList.empty();
     
-    // Отображаем персонажей с их timestamp
     for (const characterName of filteredCharacters) {
         const characterFiles = chatCharacters[characterName];
+        const saveCount = characterFiles.length;
+        const savePlural = saveCount !== 1 ? 's' : '';
         
         const characterElement = $(`
             <div class="kv-cache-load-file-group collapsed" data-character-name="${characterName}">
@@ -302,7 +254,7 @@ export function renderLoadPopupFiles(chatId, context = document) {
                         ${characterName}
                     </div>
                     <div class="kv-cache-load-file-group-info">
-                        <span>${characterFiles.length} сохранени${characterFiles.length !== 1 ? 'й' : 'е'}</span>
+                        <span>${t`${saveCount} save${savePlural}`}</span>
                         <i class="fa-solid fa-chevron-down kv-cache-load-file-group-toggle"></i>
                     </div>
                 </div>
@@ -311,11 +263,10 @@ export function renderLoadPopupFiles(chatId, context = document) {
             </div>
         `);
         
-        // Добавляем timestamp для этого персонажа
         const content = characterElement.find('.kv-cache-load-file-group-content');
         for (const file of characterFiles) {
             const dateTime = formatTimestampToDate(file.timestamp);
-            const tagLabel = file.tag ? ` [тег: ${file.tag}]` : '';
+            const tagLabel = file.tag ? t` [tag: ${file.tag}]` : '';
             
             const timestampItem = $(`
                 <div class="kv-cache-load-file-item" data-character-name="${characterName}" data-timestamp="${file.timestamp}" data-filename="${file.filename}">
@@ -328,7 +279,6 @@ export function renderLoadPopupFiles(chatId, context = document) {
                 </div>
             `);
             
-            // Проверяем, является ли это сохранение выбранным
             const isSelected = loadPopupData.selectedCharacters[characterName] === file.timestamp;
             if (isSelected) {
                 timestampItem.addClass('selected');
@@ -337,26 +287,20 @@ export function renderLoadPopupFiles(chatId, context = document) {
             timestampItem.on('click', function(e) {
                 e.stopPropagation();
                 
-                // Проверяем, является ли этот элемент уже выбранным
                 const isCurrentlySelected = loadPopupData.selectedCharacters[characterName] === file.timestamp;
                 
                 if (isCurrentlySelected) {
-                    // Снимаем выделение - убираем класс и удаляем из selectedCharacters
                     timestampItem.removeClass('selected');
                     delete loadPopupData.selectedCharacters[characterName];
                 } else {
-                    // Убираем выделение с других сохранений этого персонажа
                     $(`.kv-cache-load-file-item[data-character-name="${characterName}"]`).removeClass('selected');
                     
-                    // Выделяем выбранное сохранение
                     timestampItem.addClass('selected');
                     
-                    // Выбираем этот timestamp для персонажа
                     const selectedTimestamp = file.timestamp;
                     loadPopupData.selectedCharacters[characterName] = selectedTimestamp;
                 }
                 
-                // Обновляем UI (находим popup через closest)
                 const popupDlg = timestampItem.closest('.popup, dialog');
                 updateLoadPopupSelection(popupDlg.length ? popupDlg[0] : document);
             });
@@ -364,7 +308,6 @@ export function renderLoadPopupFiles(chatId, context = document) {
             content.append(timestampItem);
         }
         
-        // Обработчик сворачивания/разворачивания
         characterElement.find('.kv-cache-load-file-group-header').on('click', function(e) {
             if ($(e.target).closest('.kv-cache-load-file-item').length) return;
             
@@ -379,35 +322,30 @@ export function renderLoadPopupFiles(chatId, context = document) {
     }
 }
 
-// Обновление информации о выбранных персонажах
 export function updateLoadPopupSelection(context = document) {
     const selectedCount = Object.keys(loadPopupData.selectedCharacters).length;
     const selectedInfo = $(context).find("#kv-cache-load-selected-info");
     
     if (selectedInfo.length === 0) {
-        return; // Popup не открыт
+        return;
     }
     
-    // Используем popup.okButton для управления кнопкой
     const loadButton = loadPopupData.currentPopup?.okButton;
     
     if (selectedCount === 0) {
-        selectedInfo.text('Персонажи не выбраны');
-        // Отключаем кнопку "Загрузить" если она есть
+        selectedInfo.text('No characters selected');
         if (loadButton) {
             loadButton.disabled = true;
         }
     } else {
         const charactersList = Object.keys(loadPopupData.selectedCharacters).join(', ');
         selectedInfo.html(`<strong>Выбрано:</strong> ${selectedCount} персонаж${selectedCount !== 1 ? 'ей' : ''} (${charactersList})`);
-        // Включаем кнопку "Загрузить"
         if (loadButton) {
             loadButton.disabled = false;
         }
     }
 }
 
-// Загрузка выбранного кеша
 export async function loadSelectedCache() {
     const selectedCharacters = loadPopupData.selectedCharacters;
     
@@ -416,7 +354,6 @@ export async function loadSelectedCache() {
         return;
     }
     
-    // Используем выбранный чат из popup, если он был выбран, иначе используем текущий
     const selectedChatId = loadPopupData.selectedChatId || loadPopupData.currentChatId || getNormalizedChatId();
     const chats = loadPopupData.chats;
     const chatCharacters = chats[selectedChatId] || {};
@@ -424,24 +361,23 @@ export async function loadSelectedCache() {
     let loadedCount = 0;
     let errors = [];
     
-    // Проверяем, что не выбрано больше персонажей, чем доступно слотов
     const selectedCount = Object.keys(selectedCharacters).length;
     const slotsState = getSlotsState();
     const totalSlots = slotsState.length;
     
     if (selectedCount > totalSlots) {
-        showToast('error', `Выбрано ${selectedCount} персонажей, но доступно только ${totalSlots} слотов. Выберите не более ${totalSlots} персонажей.`);
+        showToast('error', t`Selected ${selectedCount} characters, but only ${totalSlots} slots available. Select no more than ${totalSlots} characters.`);
         return;
     }
     
-    showToast('info', `Начинаю загрузку кешей для ${Object.keys(selectedCharacters).length} персонажей...`, 'Загрузка');
+    showToast('info', t`Starting cache load for ${Object.keys(selectedCharacters).length} characters...`, t`Loading`);
     
     const extensionSettings = getExtensionSettings();
     
-    // Шаг 1: Подготавливаем данные о выбранных персонажах и создаем Set защищенных персонажей
-    // Имена персонажей уже нормализованы в groupFilesByChatAndCharacter()
+    // Step 1: Prepare selected character data and create Set of protected characters
+    // Character names are already normalized in groupFilesByChatAndCharacter()
     const charactersToLoad = [];
-    const protectedCharactersSet = new Set(); // Нормализованные имена всех выбранных персонажей
+    const protectedCharactersSet = new Set();
     
     for (const characterName in selectedCharacters) {
         const selectedTimestamp = selectedCharacters[characterName];
@@ -449,7 +385,7 @@ export async function loadSelectedCache() {
         const fileToLoad = characterFiles.find(f => f.timestamp === selectedTimestamp);
         
         if (!fileToLoad) {
-            errors.push(`${characterName}: файл не найден`);
+                errors.push(`${characterName}: file not found`);
             continue;
         }
         
@@ -461,89 +397,81 @@ export async function loadSelectedCache() {
     }
     
     if (charactersToLoad.length === 0) {
-        showToast('error', 'Не найдено файлов для загрузки');
+        showToast('error', 'No files found for loading');
         return;
     }
     
-    // Шаг 2: Распределяем всех выбранных персонажей по слотам
-    // Используем acquireSlot() с защищенными персонажами, чтобы они не вытесняли друг друга
-    // Имена персонажей уже нормализованы
-    const characterSlotMap = new Map(); // { characterName: slotIndex }
+    // Step 2: Assign all selected characters to slots
+    // Use acquireSlot() with protected characters so they don't evict each other
+    // Character names are already normalized
+    const characterSlotMap = new Map();
     
     for (const character of charactersToLoad) {
         try {
-            // acquireSlot() автоматически проверит, есть ли персонаж уже в слоте,
-            // и если нет - найдет свободный слот или вытеснит незащищенного персонажа
+            // acquireSlot() automatically checks if character is already in slot,
+            // and if not - finds free slot or evicts unprotected character
             const slotIndex = await acquireSlot(character.characterName, MIN_USAGE_FOR_SAVE, protectedCharactersSet);
             
             if (slotIndex === null) {
-                errors.push(`${character.characterName}: не удалось получить слот`);
+                errors.push(t`${character.characterName}: failed to acquire slot`);
                 continue;
             }
             
             characterSlotMap.set(character.characterName, slotIndex);
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при распределении персонажа ${character.characterName}:`, e);
+            console.error(`[KV Cache Manager] Error assigning character ${character.characterName} to slot:`, e);
             errors.push(`${character.characterName}: ${e.message}`);
         }
     }
     
-    // Шаг 3: Загружаем кеши для всех персонажей
+    // Step 3: Load caches for all characters
     for (const character of charactersToLoad) {
         const slotIndex = characterSlotMap.get(character.characterName);
         
         if (slotIndex === undefined) {
-            // Ошибка уже добавлена на шаге 2
             continue;
         }
         
         try {
-            // Загружаем кеш
             const loaded = await loadSlotCache(slotIndex, character.fileToLoad.filename);
             
             if (loaded) {
                 loadedCount++;
                 
-                // Парсим имя файла один раз для получения информации о чате
                 const parsed = parseSaveFilename(character.fileToLoad.filename);
                 
-                // Форматируем дату-время из timestamp для тоста
                 const dateTimeStr = formatTimestampToDate(character.fileToLoad.timestamp);
                 
-                // Показываем информацию о чате, если кеш загружен из другого чата
                 const currentChatId = getNormalizedChatId();
                 const cacheChatId = parsed?.chatId;
-                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (из чата ${cacheChatId})` : '';
+                const chatInfo = cacheChatId && cacheChatId !== currentChatId ? ` (from chat ${cacheChatId})` : '';
                 
-                // Выводим тост для каждого успешно загруженного персонажа
                 if (extensionSettings.showNotifications) {
-                    showToast('success', `Загружен кеш для ${character.characterName} (${dateTimeStr})${chatInfo}`, 'Загрузка кеша');
+                    showToast('success', t`Loaded cache for ${character.characterName} (${dateTimeStr})${chatInfo}`, t`Cache Loading`);
                 }
             } else {
-                errors.push(`${character.characterName}: ошибка загрузки`);
+                errors.push(t`${character.characterName}: load error`);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${character.characterName}:`, e);
+            console.error(`[KV Cache Manager] Error loading cache for character ${character.characterName}:`, e);
             errors.push(`${character.characterName}: ${e.message}`);
         }
     }
     
-    // Показываем результат
     if (loadedCount > 0) {
         if (errors.length > 0) {
-            showToast('warning', `Загружено ${loadedCount} из ${Object.keys(selectedCharacters).length} персонажей. Ошибки: ${errors.join(', ')}`, 'Загрузка');
+            showToast('warning', t`Loaded ${loadedCount} of ${Object.keys(selectedCharacters).length} characters. Errors: ${errors.join(', ')}`, t`Loading`);
         } else {
-            showToast('success', `Успешно загружено ${loadedCount} персонажей`, 'Загрузка');
+            showToast('success', t`Successfully loaded ${loadedCount} characters`, t`Loading`);
         }
         
-        // Обновляем список слотов (loadSlotCache() уже обновляет после каждой загрузки, но финальное обновление гарантирует актуальность)
+        // loadSlotCache() already updates after each load, but final update ensures accuracy
         updateSlotsList();
     } else {
-        showToast('error', `Не удалось загрузить кеши. Ошибки: ${errors.join(', ')}`, 'Загрузка');
+        showToast('error', t`Failed to load caches. Errors: ${errors.join(', ')}`, t`Loading`);
     }
 }
 
-// Обновление поискового запроса
 export function updateSearchQuery(query, context = document) {
     loadPopupData.searchQuery = query;
     renderLoadPopupChats(context);
@@ -558,7 +486,6 @@ export function updateSearchQuery(query, context = document) {
     }
     
     if (currentChatId) {
-        // Обновляем выбранный чат при поиске
         loadPopupData.selectedChatId = currentChatId;
         renderLoadPopupFiles(currentChatId, context);
     }

@@ -1,49 +1,43 @@
-// Утилиты для работы с персонажами для KV Cache Manager
-
 import { getContext } from "../../../../extensions.js";
 import { getGroupMembers, selected_group, groups } from '../../../../group-chats.js';
 
 import { normalizeCharacterName } from './utils.js';
 
-// Получение персонажей текущего чата с информацией о мьюте
-// Работает только для групповых чатов
-// @returns {Array<{name: string, normalizedName: string, characterId: string, avatar: string, isMuted: boolean}>}
+/**
+ * Get current chat characters with mute status information
+ * Works only for group chats
+ * @returns {Array<{name: string, normalizedName: string, characterId: string, avatar: string, isMuted: boolean}>}
+ */
 export function getChatCharactersWithMutedStatus() {
     try {
         const context = getContext();
         
         if (!context) {
-            console.warn('[KV Cache Manager] Не удалось получить контекст чата');
+            console.warn('[KV Cache Manager] Failed to get chat context');
             return [];
         }
         
-        // Проверяем, является ли чат групповым
         if (context.groupId === null || context.groupId === undefined) {
-            // Обычный чат - возвращаем пустой массив (предзагрузка только для групповых)
             return [];
         }
         
-        // Групповой чат
         const groupMembers = getGroupMembers();
         
         if (!groupMembers || groupMembers.length === 0) {
-            console.warn('[KV Cache Manager] Не найдено участников группового чата');
+            console.warn('[KV Cache Manager] No group chat members found');
             return [];
         }
         
-        // Получаем информацию о мьюченных персонажах
         const group = groups?.find(x => x.id === selected_group);
         const disabledMembers = group?.disabled_members ?? [];
         
-        // Формируем массив персонажей с информацией о мьюте
         const characters = groupMembers
             .filter(member => member && member.name && typeof member.name === 'string')
             .map(member => {
                 const normalizedName = normalizeCharacterName(member.name);
-                // Проверяем, мьючен ли персонаж (проверяем наличие avatar в disabledMembers)
+                // Check if character is muted (check for avatar in disabledMembers)
                 const isMuted = disabledMembers.includes(member.avatar);
                 
-                // Получаем characterId из контекста персонажей
                 let characterId = null;
                 if (context.characters) {
                     const characterEntry = Object.entries(context.characters).find(
@@ -65,13 +59,15 @@ export function getChatCharactersWithMutedStatus() {
         
         return characters;
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при получении персонажей с информацией о мьюте:', e);
+        console.error('[KV Cache Manager] Error getting characters with mute status:', e);
         return [];
     }
 }
 
-// Получение нормализованного имени персонажа из контекста генерации
-// @returns {string|null} - нормализованное имя персонажа или null
+/**
+ * Get normalized character name from generation context
+ * @returns {string|null} Normalized character name or null
+ */
 export function getNormalizedCharacterNameFromContext() {
     try {
         const context = getContext();
@@ -87,14 +83,16 @@ export function getNormalizedCharacterNameFromContext() {
         
         return normalizeCharacterName(character.name);
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при получении имени персонажа из контекста:', e);
+        console.error('[KV Cache Manager] Error getting character name from context:', e);
         return null;
     }
 }
 
-// Получение нормализованного имени персонажа из данных события
-// @param {any} data - данные события
-// @returns {string|null} - нормализованное имя персонажа или null
+/**
+ * Get normalized character name from event data
+ * @param {any} data - Event data
+ * @returns {string|null} Normalized character name or null
+ */
 export function getNormalizedCharacterNameFromData(data) {
     if (!data) {
         return null;

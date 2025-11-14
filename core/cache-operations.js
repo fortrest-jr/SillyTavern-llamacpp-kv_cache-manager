@@ -1,91 +1,87 @@
-// Операции с кешем для KV Cache Manager
-
-import { getContext } from "../../../../extensions.js";
-
 import LlamaApi from '../api/llama-api.js';
 import { formatTimestamp, getNormalizedChatId } from '../utils/utils.js';
 import { generateSaveFilename, rotateCharacterFiles, validateCacheFile } from './file-manager.js';
 import { getAllSlotsInfo, getSlotsState, resetSlotUsage, setSlotCacheLoaded, getSlotsCountFromData, updateSlotsList } from './slot-manager.js';
-import { showToast, disableAllSaveButtons, enableAllSaveButtons } from '../ui/ui.js';
+import { showToast, disableAllSaveButtons, enableAllSaveButtons, showTagInputPopup } from '../ui/ui.js';
 import { getExtensionSettings, MIN_USAGE_FOR_SAVE } from '../settings.js';
 
-// Инициализация API клиента
 const llamaApi = new LlamaApi();
 
-// Сохранение кеша для слота
-// @param {number} slotId - Индекс слота
-// @param {string} filename - Имя файла для сохранения
-// @param {string} characterName - Имя персонажа (обязательно)
+/**
+ * Save cache for slot
+ * @param {number} slotId - Slot index
+ * @param {string} filename - Filename for saving
+ * @param {string} characterName - Character name (required)
+ * @returns {Promise<boolean>} true if saved successfully
+ */
 export async function saveSlotCache(slotId, filename, characterName) {
     try {
         await llamaApi.saveSlotCache(slotId, filename);
         
-        // Проверяем размер сохраненного файла
         const isValid = await validateCacheFile(filename, characterName);
         if (!isValid) {
             return false;
         }
         
-        showToast('success', `Кеш для ${characterName} успешно сохранен`);
+        showToast('success', t`Cache for ${characterName} saved successfully`);
         
         return true;
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}:`, e);
-        const errorMessage = e.message || 'Неизвестная ошибка';
-        if (errorMessage.includes('Таймаут')) {
-            showToast('error', `Таймаут при сохранении кеша для ${characterName}`);
+        console.error(`[KV Cache Manager] Error saving slot ${slotId}:`, e);
+        const errorMessage = e.message || 'Unknown error';
+        if (errorMessage.includes('Timeout') || errorMessage.includes('timeout')) {
+            showToast('error', t`Timeout while saving cache for ${characterName}`);
         } else {
-            showToast('error', `Ошибка при сохранении кеша для ${characterName}: ${errorMessage}`);
+            showToast('error', t`Error saving cache for ${characterName}: ${errorMessage}`);
         }
         return false;
     }
 }
 
-// Загрузка кеша для слота
+/**
+ * Load cache for slot
+ * @param {number} slotId - Slot index
+ * @param {string} filename - Filename to load
+ * @returns {Promise<boolean>} true if loaded successfully
+ */
 export async function loadSlotCache(slotId, filename) {
     try {
         await llamaApi.loadSlotCache(slotId, filename);
         
-        // При любой загрузке кеша сбрасываем счетчик использования в 0 и помечаем кеш как загруженный
+        // Reset usage counter to 0 and mark cache as loaded on any cache load
         resetSlotUsage(slotId);
         setSlotCacheLoaded(slotId, true);
         
-        // Обновляем список слотов после загрузки
         updateSlotsList();
         
         return true;
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка загрузки кеша слота ${slotId}:`, e);
+        console.error(`[KV Cache Manager] Error loading cache for slot ${slotId}:`, e);
         return false;
     }
 }
 
-// Очистка кеша для слота
 export async function clearSlotCache(slotId) {
     try {
         await llamaApi.clearSlotCache(slotId);
         
-        // Обновляем список слотов после очистки
         updateSlotsList();
         
         return true;
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка очистки слота ${slotId}:`, e);
+        console.error(`[KV Cache Manager] Error clearing slot ${slotId}:`, e);
         return false;
     }
 }
 
-// Очистка всех слотов
 export async function clearAllSlotsCache() {
     try {
-        // Получаем информацию о всех слотах
         const slotsData = await getAllSlotsInfo();
         
         if (!slotsData) {
             return false;
         }
         
-        // Определяем общее количество слотов
         const totalSlots = getSlotsCountFromData(slotsData);
         
         if (totalSlots === 0) {
@@ -95,7 +91,6 @@ export async function clearAllSlotsCache() {
         let clearedCount = 0;
         let errors = [];
         
-        // Очищаем все слоты (от 0 до totalSlots - 1)
         for (let slotId = 0; slotId < totalSlots; slotId++) {
             try {
                 if (await clearSlotCache(slotId)) {
@@ -104,38 +99,40 @@ export async function clearAllSlotsCache() {
                     errors.push(`слот ${slotId}`);
                 }
             } catch (e) {
-                console.error(`[KV Cache Manager] Ошибка при очистке слота ${slotId}:`, e);
+                console.error(`[KV Cache Manager] Error clearing slot ${slotId}:`, e);
                 errors.push(`слот ${slotId}: ${e.message}`);
             }
         }
         
         if (clearedCount > 0) {
             if (errors.length > 0) {
-                showToast('warning', `Очищено ${clearedCount} из ${totalSlots} слотов. Ошибки: ${errors.join(', ')}`, 'Очистка кеша');
+                showToast('warning', t`Cleared ${clearedCount} of ${totalSlots} slots. Errors: ${errors.join(', ')}`, t`Cache Clear`);
             } else {
-                showToast('success', `Успешно очищено ${clearedCount} слотов`, 'Очистка кеша');
+                showToast('success', t`Successfully cleared ${clearedCount} slots`, t`Cache Clear`);
             }
             
-            // Обновляем список слотов после очистки (clearSlotCache() уже обновляет после каждой очистки, но финальное обновление гарантирует актуальность)
+            // clearSlotCache() already updates after each clear, but final update ensures accuracy
             updateSlotsList();
             
             return true;
         } else {
-            console.error(`[KV Cache Manager] Не удалось очистить слоты. Ошибки: ${errors.join(', ')}`);
-            showToast('error', `Не удалось очистить слоты. Ошибки: ${errors.join(', ')}`, 'Очистка кеша');
+            console.error(`[KV Cache Manager] Failed to clear slots. Errors: ${errors.join(', ')}`);
+            showToast('error', t`Failed to clear slots. Errors: ${errors.join(', ')}`, t`Cache Clear`);
             return false;
         }
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при очистке всех слотов:', e);
-        showToast('error', `Ошибка при очистке слотов: ${e.message}`, 'Очистка кеша');
+        console.error('[KV Cache Manager] Error clearing all slots:', e);
+        showToast('error', t`Error clearing slots: ${e.message}`, t`Cache Clear`);
         return false;
     }
 }
 
-// Сохранение кеша для персонажа (автосохранение)
-// @param {string} characterName - Нормализованное имя персонажа
-// @param {number} slotIndex - индекс слота
-// @returns {Promise<boolean>} - true если кеш был сохранен, false если ошибка
+/**
+ * Save cache for character (auto-save)
+ * @param {string} characterName - Normalized character name
+ * @param {number} slotIndex - Slot index
+ * @returns {Promise<boolean>} true if cache was saved, false on error
+ */
 export async function saveCharacterCache(characterName, slotIndex) {
     if (!characterName || typeof characterName !== 'string') {
         return false;
@@ -153,77 +150,60 @@ export async function saveCharacterCache(characterName, slotIndex) {
         const success = await saveSlotCache(slotIndex, filename, characterName);
         
         if (success) {
-            // Выполняем ротацию файлов для этого персонажа
             await rotateCharacterFiles(characterName);
             
-            // Сбрасываем usage после успешного сохранения
             resetSlotUsage(slotIndex);
             
             return true;
         } else {
-            console.error(`[KV Cache Manager] Не удалось сохранить кеш для персонажа ${characterName}`);
+            console.error(`[KV Cache Manager] Failed to save cache for character ${characterName}`);
             return false;
         }
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка при сохранении кеша для персонажа ${characterName}:`, e);
+        console.error(`[KV Cache Manager] Error saving cache for character ${characterName}:`, e);
         return false;
     }
 }
 
-// Сохранение кеша для всех персонажей, которые находятся в слотах
-// Используется перед очисткой слотов при смене чата
 export async function saveAllSlotsCache() {
     const slotsState = getSlotsState();
     const totalSlots = slotsState.length;
     
-    // Отключаем все кнопки сохранения (кроме кнопок отдельных слотов)
     disableAllSaveButtons();
     
     try {
-        // Сохраняем кеш для всех персонажей, которые были в слотах перед очисткой
-        // Важно: дожидаемся завершения сохранения перед очисткой слотов, чтобы избежать потери данных
+        // IMPORTANT: Wait for save completion before clearing slots to avoid data loss
         for (let i = 0; i < totalSlots; i++) {
             const slot = slotsState[i];
             const currentCharacter = slot?.characterName;
             if (currentCharacter && typeof currentCharacter === 'string') {
                 const usageCount = slot.usage || 0;
                 
-                // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
+                // Save cache before eviction only if character used slot at least N times
                 if (usageCount >= MIN_USAGE_FOR_SAVE) {
                     await saveCharacterCache(currentCharacter, i);
                 }
             }
         }
     } finally {
-        // Включаем кнопки обратно
         enableAllSaveButtons();
     }
 }
 
-// Общая функция сохранения кеша
-// Сохраняет всех персонажей, которые находятся в слотах
 export async function saveCache(requestTag = false) {
     let tag = null;
-    
-    // Запрашиваем тег, если нужно
     if (requestTag) {
-        tag = prompt('Введите тег для сохранения:');
-        if (!tag || !tag.trim()) {
-            if (tag !== null) {
-                // Пользователь нажал OK, но не ввел тег
-                showToast('error', 'Тег не может быть пустым');
-            }
-            return false; // Отмена сохранения
+        tag = await showTagInputPopup();
+        if (tag === null) {
+            return false;
         }
         tag = tag.trim();
     }
     
-    // Получаем нормализованный ID чата
     const chatId = getNormalizedChatId();
     
-    showToast('info', 'Начинаю сохранение кеша...');
+    showToast('info', t`Starting cache save...`);
     
-    // Получаем персонажей из слотов (они уже должны быть только из текущего чата)
     const slotsState = getSlotsState();
     const charactersToSave = [];
     
@@ -238,19 +218,18 @@ export async function saveCache(requestTag = false) {
     });
     
     if (charactersToSave.length === 0) {
-        showToast('warning', 'Нет персонажей в слотах для сохранения');
+        showToast('warning', t`No characters in slots to save`);
         return false;
     }
     
-    const successfullySaved = []; // Список успешно сохраненных персонажей
-    const saveErrors = []; // Список персонажей с проблемами сохранения
+    const successfullySaved = [];
+    const saveErrors = [];
     
     const extensionSettings = getExtensionSettings();
     
-    // Сохраняем каждого персонажа с индивидуальным timestamp
     for (const { characterName, slotIndex } of charactersToSave) {
         if (!characterName) {
-            // Пропускаем, если имя персонажа не определено (временное решение для обычного режима)
+            // Skip if character name is undefined (temporary solution for normal mode)
             continue;
         }
         
@@ -261,7 +240,7 @@ export async function saveCache(requestTag = false) {
             if (await saveSlotCache(slotIndex, filename, characterName)) {
                 successfullySaved.push(characterName);
                 
-                // Выполняем ротацию файлов для этого персонажа (только для автосохранений)
+                // Rotate files only for auto-saves (not for tagged saves)
                 if (!tag) {
                     await rotateCharacterFiles(characterName);
                 }
@@ -269,11 +248,10 @@ export async function saveCache(requestTag = false) {
                 saveErrors.push(characterName);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при сохранении персонажа ${characterName}:`, e);
+            console.error(`[KV Cache Manager] Error saving character ${characterName}:`, e);
             saveErrors.push(`${characterName}: ${e.message}`);
         }
     }
     
-    // Возвращаем true при успешном сохранении (хотя бы один персонаж сохранен)
     return successfullySaved.length > 0;
 }

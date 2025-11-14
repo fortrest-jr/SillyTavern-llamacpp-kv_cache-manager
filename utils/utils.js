@@ -1,8 +1,5 @@
-// Утилиты и вспомогательные функции для KV Cache Manager
-
 import { getCurrentChatId } from "../../../../../script.js";
 
-// Формирование timestamp для имени файла (YYYYMMDDHHMMSS)
 export function formatTimestamp(date = new Date()) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -13,8 +10,7 @@ export function formatTimestamp(date = new Date()) {
     return `${year}${month}${day}${hour}${minute}${second}`;
 }
 
-// Общая функция нормализации строк для использования в именах файлов и сравнениях
-// Заменяет все недопустимые символы (включая пробелы) на подчеркивания
+// Replaces all invalid characters (including spaces) with underscores
 export function normalizeString(str, defaultValue = '') {
     if (!str && str !== 0) {
         return defaultValue;
@@ -22,30 +18,26 @@ export function normalizeString(str, defaultValue = '') {
     return String(str).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
-// Нормализация chatId для использования в именах файлов и сравнениях
 export function normalizeChatId(chatId) {
     return normalizeString(chatId, 'unknown');
 }
 
-// Получение нормализованного chatId текущего чата
 export function getNormalizedChatId() {
     return normalizeChatId(getCurrentChatId());
 }
 
-// Нормализация имени персонажа для использования в именах файлов и сравнениях
 export function normalizeCharacterName(characterName) {
     return normalizeString(characterName, '');
 }
 
-// Форматирование даты и времени из timestamp
 export function formatTimestampToDate(timestamp) {
     const date = new Date(
-        parseInt(timestamp.substring(0, 4)), // год
-        parseInt(timestamp.substring(4, 6)) - 1, // месяц (0-based)
-        parseInt(timestamp.substring(6, 8)), // день
-        parseInt(timestamp.substring(8, 10)), // час
-        parseInt(timestamp.substring(10, 12)), // минута
-        parseInt(timestamp.substring(12, 14)) // секунда
+        parseInt(timestamp.substring(0, 4)),
+        parseInt(timestamp.substring(4, 6)) - 1,
+        parseInt(timestamp.substring(6, 8)),
+        parseInt(timestamp.substring(8, 10)),
+        parseInt(timestamp.substring(10, 12)),
+        parseInt(timestamp.substring(12, 14))
     );
     const dateStr = date.toLocaleDateString('ru-RU', { 
         year: 'numeric', 
@@ -60,28 +52,17 @@ export function formatTimestampToDate(timestamp) {
     return `${dateStr} ${timeStr}`;
 }
 
-// Парсинг списка файлов с добавлением распарсенных данных
-// Возвращает массив файлов с добавленным полем parsed
-// @param {Array} files - массив файлов (объекты с полем name или строки)
-// @param {Function} parseSaveFilename - функция для парсинга имени файла (должна быть передана из file-manager)
-// @returns {Array} - массив файлов с добавленным полем parsed и гарантированным полем name
 export function parseFilesList(files, parseSaveFilename) {
     return files.map(file => {
         const filename = file.name || file;
         const parsed = parseSaveFilename(filename);
-        // Гарантируем наличие поля name в результате
         return { ...(typeof file === 'object' ? file : {}), name: filename, parsed };
     });
 }
 
-// Сортировка по timestamp
-// Поддерживает как файлы с полем parsed.timestamp, так и объекты с полем timestamp
-// @param {Array} items - массив файлов (с parsed.timestamp) или объектов (с timestamp)
-// @param {boolean} descending - true для сортировки от новых к старым (по умолчанию), false для обратного порядка
-// @returns {Array} - отсортированный массив
+// Supports both formats: parsed.timestamp (for files) and timestamp (for objects)
 export function sortByTimestamp(items, descending = true) {
     return items.sort((a, b) => {
-        // Поддерживаем оба формата: parsed.timestamp (для файлов) и timestamp (для объектов)
         const timestampA = a.parsed?.timestamp || a.timestamp;
         const timestampB = b.parsed?.timestamp || b.timestamp;
         

@@ -1,11 +1,8 @@
-// Управление настройками для KV Cache Manager
-
 import { extension_settings } from "../../../extensions.js";
 import { saveSettingsDebounced } from "../../../../script.js";
 import { showToast } from './ui/ui.js';
 import { updateSlotsList } from './core/slot-manager.js';
 
-// Имя расширения должно совпадать с именем папки
 export const extensionName = "kv_cache-manager";
 export const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
@@ -18,29 +15,24 @@ export const defaultSettings = {
     preloadTimeout: 20
 };
 
-// Константы для валидации файлов
-export const MIN_FILE_SIZE_MB = 1; // Минимальный размер файла кеша в МБ (файлы меньше этого размера считаются невалидными)
-export const FILE_CHECK_DELAY_MS = 500; // Задержка перед проверкой размера файла после сохранения (мс)
+export const MIN_FILE_SIZE_MB = 1;
+export const FILE_CHECK_DELAY_MS = 500;
 
-// Константы для использования слотов
-export const MIN_USAGE_FOR_SAVE = 1; // Минимальное количество использований слота для сохранения кеша
+export const MIN_USAGE_FOR_SAVE = 1;
 
-// Таймауты для llama.cpp API (в миллисекундах)
 export const LLAMA_API_TIMEOUTS = {
-    GET_SLOTS: 10000,           // 10 секунд
-    SAVE_CACHE: 300000,          // 5 минут
-    LOAD_CACHE: 300000,          // 5 минут
-    CLEAR_CACHE: 30000           // 30 секунд
+    GET_SLOTS: 10000,
+    SAVE_CACHE: 300000,
+    LOAD_CACHE: 300000,
+    CLEAR_CACHE: 30000
 };
 
-// Таймауты для file plugin API (в миллисекундах)
 export const FILE_PLUGIN_API_TIMEOUTS = {
-    CSRF_TOKEN: 5000,            // 5 секунд
-    GET_FILES: 10000,            // 10 секунд
-    DELETE_FILE: 10000           // 10 секунд
+    CSRF_TOKEN: 5000,
+    GET_FILES: 10000,
+    DELETE_FILE: 10000
 };
 
-// Получение объекта настроек расширения
 export function getExtensionSettings() {
     if (!extension_settings[extensionName]) {
         extension_settings[extensionName] = {};
@@ -48,11 +40,9 @@ export function getExtensionSettings() {
     return extension_settings[extensionName];
 }
 
-// Загрузка настроек
 export async function loadSettings() {
     const extensionSettings = getExtensionSettings();
     
-    // Убеждаемся, что все поля из defaultSettings инициализированы
     for (const key in defaultSettings) {
         if (!(key in extensionSettings)) {
             extensionSettings[key] = defaultSettings[key];
@@ -66,11 +56,9 @@ export async function loadSettings() {
     $("#kv-cache-clear-on-chat-change").prop("checked", extensionSettings.clearOnChatChange).trigger("input");
     $("#kv-cache-preload-timeout").val(extensionSettings.preloadTimeout).trigger("input");
     
-    // Обновляем список слотов
     updateSlotsList();
 }
 
-// Обработчики для чекбоксов и полей ввода
 export function createSettingsHandlers() {
     const extensionSettings = getExtensionSettings();
     
@@ -96,14 +84,16 @@ export function createSettingsHandlers() {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.showNotifications = value;
         saveSettingsDebounced();
-        showToast('success', `Уведомления ${value ? 'включены' : 'отключены'}`);
+        const status = value ? t`enabled` : t`disabled`;
+        showToast('success', t`Notifications ${status}`);
     }
     
     function onClearOnChatChangeChange(event) {
         const value = Boolean($(event.target).prop("checked"));
         extensionSettings.clearOnChatChange = value;
         saveSettingsDebounced();
-        showToast('success', `Очистка при смене чата ${value ? 'включена' : 'отключена'}`);
+        const status = value ? t`enabled` : t`disabled`;
+        showToast('success', t`Clear on chat change ${status}`);
     }
     
     function onPreloadTimeoutChange(event) {
