@@ -1,7 +1,7 @@
 // Popup предзагрузки для KV Cache Manager
 
-import { getContext } from "../../../../extensions.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scripts/popup.js';
+import { t } from '../../../../i18n.js';
 
 import { showToast } from './ui.js';
 import { extensionFolderPath } from '../settings.js';

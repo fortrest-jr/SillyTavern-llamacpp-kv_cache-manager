@@ -1,7 +1,8 @@
 // Popup загрузки для KV Cache Manager
 
 import { getCurrentChatId } from "../../../../../script.js";
-import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scripts/popup.js';
+import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../popup.js';
+import { t } from '../../../../i18n.js';
 
 import { getNormalizedChatId, formatTimestampToDate } from '../utils/utils.js';
 import { getFilesList, parseSaveFilename, groupFilesByChatAndCharacter, getLastCacheForCharacter } from '../core/file-manager.js';

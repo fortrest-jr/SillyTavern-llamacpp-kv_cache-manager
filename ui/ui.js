@@ -2,6 +2,7 @@
 
 import { getContext } from "../../../../extensions.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scripts/popup.js';
+import { t } from '../../../../i18n.js';
 
 import { getExtensionSettings } from '../settings.js';
 import { getSlotsState, initializeSlots } from '../core/slot-manager.js';
