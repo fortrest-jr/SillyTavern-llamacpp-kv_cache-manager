@@ -1,52 +1,52 @@
-// Управление файлами кеша для KV Cache Manager
-
 import FilePluginApi from '../api/file-plugin-api.js';
 import { normalizeChatId, normalizeCharacterName, normalizeString, getNormalizedChatId, parseFilesList, sortByTimestamp } from '../utils/utils.js';
 import { showToast } from '../ui/ui.js';
 import { getExtensionSettings, MIN_FILE_SIZE_MB, FILE_CHECK_DELAY_MS } from '../settings.js';
 
-// Инициализация API клиента
 const filePluginApi = new FilePluginApi();
 
-// Генерация имени файла в едином формате
-// Форматы:
-// - Автосохранение: {chatId}_{timestamp}_character_{characterName}.bin
-// - С тегом: {chatId}_{timestamp}_tag_{tag}_character_{characterName}.bin
-// @param {string} chatId - ID чата
-// @param {string} timestamp - временная метка
-// @param {string} characterName - имя персонажа (обязательно)
-// @param {string} tag - тег для ручного сохранения (опционально)
+/**
+ * Generate filename in unified format
+ * Formats:
+ * - Auto-save: {chatId}_{timestamp}_character_{characterName}.bin
+ * - With tag: {chatId}_{timestamp}_tag_{tag}_character_{characterName}.bin
+ * @param {string} chatId - Chat ID
+ * @param {string} timestamp - Timestamp
+ * @param {string} characterName - Character name (required)
+ * @param {string} tag - Tag for manual save (optional)
+ * @returns {string} Filename
+ */
 export function generateSaveFilename(chatId, timestamp, characterName, tag = null) {
     const safeChatId = normalizeChatId(chatId);
     const safeCharacterName = characterName;
     
-    // Ручное сохранение с тегом
     if (tag) {
         const safeTag = normalizeString(tag);
         return `${safeChatId}_${timestamp}_tag_${safeTag}_character_${safeCharacterName}.bin`;
     }
     
-    // Автосохранение (без тега)
     return `${safeChatId}_${timestamp}_character_${safeCharacterName}.bin`;
 }
 
-// Парсинг имени файла для извлечения данных
-// Поддерживает форматы:
-// - Автосохранение: {chatId}_{timestamp}_character_{characterName}.bin
-// - С тегом: {chatId}_{timestamp}_tag_{tag}_character_{characterName}.bin
-// Также поддерживает старый формат для обратной совместимости:
-// - {chatId}_{timestamp}_tag_{tag}_slot{slotId}.bin
-// - {chatId}_{timestamp}_slot{slotId}.bin
-// Возвращает { chatId, timestamp, tag, slotId, characterName } или null при ошибке
+/**
+ * Parse filename to extract data
+ * Supports formats:
+ * - Auto-save: {chatId}_{timestamp}_character_{characterName}.bin
+ * - With tag: {chatId}_{timestamp}_tag_{tag}_character_{characterName}.bin
+ * Also supports old format for backward compatibility:
+ * - {chatId}_{timestamp}_tag_{tag}_slot{slotId}.bin
+ * - {chatId}_{timestamp}_slot{slotId}.bin
+ * @param {string} filename - Filename to parse
+ * @returns {Object|null} { chatId, timestamp, tag, slotId, characterName } or null on error
+ */
 export function parseSaveFilename(filename) {
-    // Убираем расширение .bin
     const nameWithoutExt = filename.replace(/\.bin$/, '');
     
     let tag = null;
     let characterName = null;
     let beforeSuffix = nameWithoutExt;
     
-    // Проверяем новый формат: _character_{characterName} (всегда в конце)
+    // Check new format: _character_{characterName} (always at the end)
     const characterMatch = nameWithoutExt.match(/_character_(.+)$/);
     if (!characterMatch) {
         return null;
@@ -54,14 +54,13 @@ export function parseSaveFilename(filename) {
     characterName = characterMatch[1];
     beforeSuffix = nameWithoutExt.slice(0, -characterMatch[0].length);
     
-    // Проверяем наличие _tag_{tag} перед _character
     const tagMatch = beforeSuffix.match(/_tag_(.+)$/);
     if (tagMatch) {
         tag = tagMatch[1];
         beforeSuffix = beforeSuffix.slice(0, -tagMatch[0].length);
     }
     
-    // Ищем timestamp (14 цифр) с конца
+    // Find timestamp (14 digits) from the end
     const timestampMatch = beforeSuffix.match(/_(\d{14})$/);
     if (!timestampMatch) {
         return null;
@@ -78,19 +77,14 @@ export function parseSaveFilename(filename) {
     };
 }
 
-// Получение списка файлов через API плагина kv_cache-manager-plugin
-// Все файлы считываются напрямую из папки сохранений, метаданные не используются
 export async function getFilesList() {
     try {
-        // Обращаемся к API плагина для получения списка файлов
         const data = await filePluginApi.getFilesList();
         
         if (data) {
-            // Фильтруем только .bin файлы и не директории
             const binFiles = (data.files || []).filter(file => 
                 file.name.endsWith('.bin') && !file.isDirectory
             );
-            // Возвращаем объекты с именем и размером
             return binFiles.map(file => ({
                 name: file.name,
                 size: file.size || 0
@@ -105,7 +99,6 @@ export async function getFilesList() {
     }
 }
 
-// Удаление файла
 export async function deleteFile(filename) {
     try {
         await filePluginApi.deleteFile(filename);
@@ -116,23 +109,23 @@ export async function deleteFile(filename) {
     }
 }
 
-// Общая функция ротации файлов
-// @param {Function} filterFn - функция фильтрации файлов: (file) => boolean
-// @param {string} description - описание для логов и уведомлений (например, "для персонажа CharacterName" или "для чата")
-// @param {string} context - контекст для логов (например, "персонажа CharacterName" или "чата")
+/**
+ * General file rotation function
+ * @param {Function} filterFn - File filtering function: (file) => boolean
+ * @param {string} description - Description for logs and notifications (e.g., "for character CharacterName" or "for chat")
+ * @param {string} context - Context for logs (e.g., "character CharacterName" or "chat")
+ * @returns {Promise<void>}
+ */
 export async function rotateFiles(filterFn, description, context) {
     const extensionSettings = getExtensionSettings();
     const maxFiles = extensionSettings.maxFiles || 10;
     const chatId = getNormalizedChatId();
     
     try {
-        // Получаем список всех файлов
         const filesList = await getFilesList();
         
-        // Парсим файлы один раз и фильтруем
         const filteredFiles = parseFilesList(filesList, parseSaveFilename).filter(filterFn);
         
-        // Сортируем по timestamp (от новых к старым)
         sortByTimestamp(filteredFiles);
         
         if (filteredFiles.length > maxFiles) {
@@ -155,13 +148,17 @@ export async function rotateFiles(filterFn, description, context) {
     }
 }
 
-// Ротация файлов для конкретного персонажа
+/**
+ * Rotate files for specific character
+ * @param {string} characterName - Character name (will be normalized)
+ * @returns {Promise<void>}
+ */
 export async function rotateCharacterFiles(characterName) {
     if (!characterName) {
         return;
     }
     
-    // characterName уже должен быть нормализован, но нормализуем для безопасности
+    // characterName should already be normalized, but normalize for safety
     const normalizedName = normalizeCharacterName(characterName);
     const chatId = getNormalizedChatId();
     
@@ -171,19 +168,16 @@ export async function rotateCharacterFiles(characterName) {
             const parsedNormalizedName = normalizeCharacterName(file.parsed.characterName || '');
             return file.parsed.chatId === chatId && 
                    parsedNormalizedName === normalizedName &&
-                   !file.parsed.tag; // Только автосохранения (без тега)
+                   !file.parsed.tag; // Only auto-saves (without tag)
         },
         `для персонажа ${characterName} в чате ${chatId}`,
         `для ${characterName}`
     );
 }
 
-// Группировка файлов по чатам и персонажам
-// Возвращает: { [chatId]: { [characterName]: [{ timestamp, filename, tag }, ...] } }
 export function groupFilesByChatAndCharacter(files) {
     const chats = {};
     
-    // Парсим файлы один раз
     const parsedFiles = parseFilesList(files, parseSaveFilename);
     
     for (const file of parsedFiles) {
@@ -209,7 +203,6 @@ export function groupFilesByChatAndCharacter(files) {
         });
     }
     
-    // Сортируем timestamp для каждого персонажа (от новых к старым)
     for (const chatId in chats) {
         for (const characterName in chats[chatId]) {
             sortByTimestamp(chats[chatId][characterName]);
@@ -219,9 +212,12 @@ export function groupFilesByChatAndCharacter(files) {
     return chats;
 }
 
-// Получение последнего кеша для персонажа
-// @param {string} characterName - Нормализованное имя персонажа
-// @param {boolean} currentChatOnly - искать только в текущем чате (по умолчанию true)
+/**
+ * Get last cache for character
+ * @param {string} characterName - Normalized character name
+ * @param {boolean} currentChatOnly - Search only in current chat (default: true)
+ * @returns {Promise<Object|null>} Cache info or null
+ */
 export async function getLastCacheForCharacter(characterName, currentChatOnly = true) {
     try {
         const filesList = await getFilesList();
@@ -229,16 +225,13 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
             return null;
         }
         
-        // characterName уже должен быть нормализован, но нормализуем для безопасности
+        // characterName should already be normalized, but normalize for safety
         const normalizedCharacterName = normalizeCharacterName(characterName);
         
-        // Получаем chatId текущего чата для фильтрации (если нужно)
         const currentChatId = currentChatOnly ? getNormalizedChatId() : null;
         
-        // Парсим файлы один раз и фильтруем
         const parsedFiles = parseFilesList(filesList, parseSaveFilename);
         
-        // Ищем файлы, содержащие имя персонажа
         const characterFiles = [];
         
         for (const file of parsedFiles) {
@@ -246,12 +239,11 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
                 continue;
             }
             
-            // Фильтруем по чату, если нужно
             if (currentChatOnly && file.parsed.chatId !== currentChatId) {
                 continue;
             }
             
-            // Проверяем по characterName в имени файла (основной способ для режима групповых чатов)
+            // Check by characterName in filename (primary method for group chat mode)
             if (file.parsed.characterName) {
                 const normalizedParsedName = normalizeCharacterName(file.parsed.characterName);
                 if (normalizedParsedName === normalizedCharacterName) {
@@ -260,13 +252,12 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
                         timestamp: file.parsed.timestamp,
                         chatId: file.parsed.chatId
                     });
-                    continue; // Найден по characterName, не нужно проверять fallback
+                    continue; // Found by characterName, no need to check fallback
                 }
             }
             
-            // Также проверяем по имени файла (fallback, менее надежный способ)
+            // Also check by filename (fallback, less reliable method)
             if (file.name.includes(normalizedCharacterName) || file.name.includes(characterName)) {
-                // Убеждаемся, что это не дубликат
                 const alreadyAdded = characterFiles.some(f => f.filename === file.name);
                 if (!alreadyAdded) {
                     characterFiles.push({
@@ -282,10 +273,8 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
             return null;
         }
         
-        // Сортируем по timestamp (от новых к старым)
         sortByTimestamp(characterFiles);
         
-        // Возвращаем самый последний файл
         const lastFile = characterFiles[0];
         
         return {
@@ -297,23 +286,24 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
     }
 }
 
-// Валидация размера сохраненного файла кеша
-// @param {string} filename - Имя файла для проверки
-// @param {string} characterName - Имя персонажа (для уведомлений)
-// @returns {Promise<boolean>} - true если файл валиден, false если файл слишком мал и был удален
+/**
+ * Validate saved cache file size
+ * @param {string} filename - Filename to check
+ * @param {string} characterName - Character name (for notifications)
+ * @returns {Promise<boolean>} true if file is valid, false if file is too small and was deleted
+ */
 export async function validateCacheFile(filename, characterName) {
     try {
-        // Ждем немного, чтобы файл точно был сохранен на сервере
+        // Wait a bit to ensure file is saved on server
         await new Promise(resolve => setTimeout(resolve, FILE_CHECK_DELAY_MS));
         
         const filesList = await getFilesList();
         const savedFile = filesList.find(file => file.name === filename);
         
         if (savedFile) {
-            const fileSizeMB = savedFile.size / (1024 * 1024); // Размер в мегабайтах
+            const fileSizeMB = savedFile.size / (1024 * 1024);
             
             if (fileSizeMB < MIN_FILE_SIZE_MB) {
-                // Файл меньше минимального размера - считаем невалидным и удаляем
                 console.warn(`[KV Cache Manager] File ${filename} is too small (${fileSizeMB.toFixed(2)} MB), deleting as invalid`);
                 await deleteFile(filename);
                 showToast('warning', `Файл кеша для ${characterName} слишком мал, не сохранён`);
@@ -324,7 +314,7 @@ export async function validateCacheFile(filename, characterName) {
         return true;
     } catch (e) {
         console.warn(`[KV Cache Manager] Failed to check file size for ${filename}:`, e);
-        // Продолжаем, даже если не удалось проверить размер
+        // Continue even if size check failed
         return true;
     }
 }

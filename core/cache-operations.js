@@ -1,4 +1,3 @@
-// Операции с кешем для KV Cache Manager
 import LlamaApi from '../api/llama-api.js';
 import { formatTimestamp, getNormalizedChatId } from '../utils/utils.js';
 import { generateSaveFilename, rotateCharacterFiles, validateCacheFile } from './file-manager.js';
@@ -6,18 +5,19 @@ import { getAllSlotsInfo, getSlotsState, resetSlotUsage, setSlotCacheLoaded, get
 import { showToast, disableAllSaveButtons, enableAllSaveButtons, showTagInputPopup } from '../ui/ui.js';
 import { getExtensionSettings, MIN_USAGE_FOR_SAVE } from '../settings.js';
 
-// Инициализация API клиента
 const llamaApi = new LlamaApi();
 
-// Сохранение кеша для слота
-// @param {number} slotId - Индекс слота
-// @param {string} filename - Имя файла для сохранения
-// @param {string} characterName - Имя персонажа (обязательно)
+/**
+ * Save cache for slot
+ * @param {number} slotId - Slot index
+ * @param {string} filename - Filename for saving
+ * @param {string} characterName - Character name (required)
+ * @returns {Promise<boolean>} true if saved successfully
+ */
 export async function saveSlotCache(slotId, filename, characterName) {
     try {
         await llamaApi.saveSlotCache(slotId, filename);
         
-        // Проверяем размер сохраненного файла
         const isValid = await validateCacheFile(filename, characterName);
         if (!isValid) {
             return false;
@@ -38,16 +38,20 @@ export async function saveSlotCache(slotId, filename, characterName) {
     }
 }
 
-// Загрузка кеша для слота
+/**
+ * Load cache for slot
+ * @param {number} slotId - Slot index
+ * @param {string} filename - Filename to load
+ * @returns {Promise<boolean>} true if loaded successfully
+ */
 export async function loadSlotCache(slotId, filename) {
     try {
         await llamaApi.loadSlotCache(slotId, filename);
         
-        // При любой загрузке кеша сбрасываем счетчик использования в 0 и помечаем кеш как загруженный
+        // Reset usage counter to 0 and mark cache as loaded on any cache load
         resetSlotUsage(slotId);
         setSlotCacheLoaded(slotId, true);
         
-        // Обновляем список слотов после загрузки
         updateSlotsList();
         
         return true;
@@ -57,12 +61,10 @@ export async function loadSlotCache(slotId, filename) {
     }
 }
 
-// Очистка кеша для слота
 export async function clearSlotCache(slotId) {
     try {
         await llamaApi.clearSlotCache(slotId);
         
-        // Обновляем список слотов после очистки
         updateSlotsList();
         
         return true;
@@ -72,17 +74,14 @@ export async function clearSlotCache(slotId) {
     }
 }
 
-// Очистка всех слотов
 export async function clearAllSlotsCache() {
     try {
-        // Получаем информацию о всех слотах
         const slotsData = await getAllSlotsInfo();
         
         if (!slotsData) {
             return false;
         }
         
-        // Определяем общее количество слотов
         const totalSlots = getSlotsCountFromData(slotsData);
         
         if (totalSlots === 0) {
@@ -92,7 +91,6 @@ export async function clearAllSlotsCache() {
         let clearedCount = 0;
         let errors = [];
         
-        // Очищаем все слоты (от 0 до totalSlots - 1)
         for (let slotId = 0; slotId < totalSlots; slotId++) {
             try {
                 if (await clearSlotCache(slotId)) {
@@ -113,7 +111,7 @@ export async function clearAllSlotsCache() {
                 showToast('success', t`Successfully cleared ${clearedCount} slots`, t`Cache Clear`);
             }
             
-            // Обновляем список слотов после очистки (clearSlotCache() уже обновляет после каждой очистки, но финальное обновление гарантирует актуальность)
+            // clearSlotCache() already updates after each clear, but final update ensures accuracy
             updateSlotsList();
             
             return true;
@@ -129,10 +127,12 @@ export async function clearAllSlotsCache() {
     }
 }
 
-// Сохранение кеша для персонажа (автосохранение)
-// @param {string} characterName - Нормализованное имя персонажа
-// @param {number} slotIndex - индекс слота
-// @returns {Promise<boolean>} - true если кеш был сохранен, false если ошибка
+/**
+ * Save cache for character (auto-save)
+ * @param {string} characterName - Normalized character name
+ * @param {number} slotIndex - Slot index
+ * @returns {Promise<boolean>} true if cache was saved, false on error
+ */
 export async function saveCharacterCache(characterName, slotIndex) {
     if (!characterName || typeof characterName !== 'string') {
         return false;
@@ -150,10 +150,8 @@ export async function saveCharacterCache(characterName, slotIndex) {
         const success = await saveSlotCache(slotIndex, filename, characterName);
         
         if (success) {
-            // Выполняем ротацию файлов для этого персонажа
             await rotateCharacterFiles(characterName);
             
-            // Сбрасываем usage после успешного сохранения
             resetSlotUsage(slotIndex);
             
             return true;
@@ -167,38 +165,31 @@ export async function saveCharacterCache(characterName, slotIndex) {
     }
 }
 
-// Сохранение кеша для всех персонажей, которые находятся в слотах
-// Используется перед очисткой слотов при смене чата
 export async function saveAllSlotsCache() {
     const slotsState = getSlotsState();
     const totalSlots = slotsState.length;
     
-    // Отключаем все кнопки сохранения (кроме кнопок отдельных слотов)
     disableAllSaveButtons();
     
     try {
-        // Сохраняем кеш для всех персонажей, которые были в слотах перед очисткой
-        // Важно: дожидаемся завершения сохранения перед очисткой слотов, чтобы избежать потери данных
+        // IMPORTANT: Wait for save completion before clearing slots to avoid data loss
         for (let i = 0; i < totalSlots; i++) {
             const slot = slotsState[i];
             const currentCharacter = slot?.characterName;
             if (currentCharacter && typeof currentCharacter === 'string') {
                 const usageCount = slot.usage || 0;
                 
-                // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум 2 раза
+                // Save cache before eviction only if character used slot at least N times
                 if (usageCount >= MIN_USAGE_FOR_SAVE) {
                     await saveCharacterCache(currentCharacter, i);
                 }
             }
         }
     } finally {
-        // Включаем кнопки обратно
         enableAllSaveButtons();
     }
 }
 
-// Общая функция сохранения кеша
-// Сохраняет всех персонажей, которые находятся в слотах
 export async function saveCache(requestTag = false) {
     let tag = null;
     if (requestTag) {
@@ -209,12 +200,10 @@ export async function saveCache(requestTag = false) {
         tag = tag.trim();
     }
     
-    // Получаем нормализованный ID чата
     const chatId = getNormalizedChatId();
     
     showToast('info', t`Starting cache save...`);
     
-    // Получаем персонажей из слотов (они уже должны быть только из текущего чата)
     const slotsState = getSlotsState();
     const charactersToSave = [];
     
@@ -233,15 +222,14 @@ export async function saveCache(requestTag = false) {
         return false;
     }
     
-    const successfullySaved = []; // Список успешно сохраненных персонажей
-    const saveErrors = []; // Список персонажей с проблемами сохранения
+    const successfullySaved = [];
+    const saveErrors = [];
     
     const extensionSettings = getExtensionSettings();
     
-    // Сохраняем каждого персонажа с индивидуальным timestamp
     for (const { characterName, slotIndex } of charactersToSave) {
         if (!characterName) {
-            // Пропускаем, если имя персонажа не определено (временное решение для обычного режима)
+            // Skip if character name is undefined (temporary solution for normal mode)
             continue;
         }
         
@@ -252,7 +240,7 @@ export async function saveCache(requestTag = false) {
             if (await saveSlotCache(slotIndex, filename, characterName)) {
                 successfullySaved.push(characterName);
                 
-                // Выполняем ротацию файлов для этого персонажа (только для автосохранений)
+                // Rotate files only for auto-saves (not for tagged saves)
                 if (!tag) {
                     await rotateCharacterFiles(characterName);
                 }
@@ -265,6 +253,5 @@ export async function saveCache(requestTag = false) {
         }
     }
     
-    // Возвращаем true при успешном сохранении (хотя бы один персонаж сохранен)
     return successfullySaved.length > 0;
 }

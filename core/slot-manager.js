@@ -1,5 +1,3 @@
-// Управление слотами для KV Cache Manager
-
 import { getContext } from "../../../../extensions.js";
 import { getGroupMembers } from '../../../../group-chats.js';
 import { t } from '../../../../i18n.js';
@@ -10,21 +8,15 @@ import { showToast } from '../ui/ui.js';
 import { saveCharacterCache, saveAllSlotsCache, clearAllSlotsCache } from './cache-operations.js';
 import { getExtensionSettings } from '../settings.js';
 
-// Инициализация API клиента
 const llamaApi = new LlamaApi();
 
-// Состояние слотов
 let slotsState = [];
-
-// Переменная для отслеживания предыдущего чата
 let previousChatId = 'unknown';
 
-// Получение состояния слотов
 export function getSlotsState() {
     return slotsState;
 }
 
-// Получение количества слотов из ответа /slots
 export function getSlotsCountFromData(slotsData) {
     if (Array.isArray(slotsData)) {
         return slotsData.length;
@@ -34,7 +26,6 @@ export function getSlotsCountFromData(slotsData) {
     return 0;
 }
 
-// Получение информации о всех слотах через /slots
 export async function getAllSlotsInfo() {
     try {
         const slotsData = await llamaApi.getSlots();
@@ -47,8 +38,11 @@ export async function getAllSlotsInfo() {
     }
 }
 
-// Создание объекта слота с персонажем
-// @param {string} characterName - Нормализованное имя персонажа
+/**
+ * Create slot object with character
+ * @param {string} characterName - Normalized character name
+ * @returns {Object} Slot object
+ */
 export function createSlotWithCharacter(characterName) {
     return {
         characterName: characterName,
@@ -58,31 +52,23 @@ export function createSlotWithCharacter(characterName) {
     };
 }
 
-// Создание объекта пустого слота
 export function createEmptySlot() {
     return createSlotWithCharacter(undefined);
 }
 
-// Инициализация слотов для режима групповых чатов
 export async function initializeSlots() {
     const slotsData = await getAllSlotsInfo();
     const totalSlots = slotsData ? getSlotsCountFromData(slotsData) : 4;
     
-    // Инициализируем массив объектов состояния слотов
     slotsState = [];
     
-    // Создаем объекты для каждого слота
     for (let i = 0; i < totalSlots; i++) {
         slotsState[i] = createEmptySlot();
     }
     
-    // Обновляем UI
     updateSlotsList();
 }
 
-// Получение списка нормализованных имен персонажей текущего чата
-// Использует правильный подход SillyTavern для определения персонажей
-// ВСЕГДА возвращает нормализованные имена
 export function getNormalizedChatCharacters() {
     try {
         const context = getContext();
@@ -92,10 +78,8 @@ export function getNormalizedChatCharacters() {
             return [];
         }
         
-        // Проверяем, является ли чат групповым
         if (context.groupId === null || context.groupId === undefined) {
-            // Обычный (одиночный) чат
-            // Возвращаем только имя персонажа (name2), пользователя (name1) не включаем
+            // Return only character name (name2), exclude user name (name1)
             const characterName = context.name2;
             if (characterName) {
                 const normalizedName = normalizeCharacterName(characterName);
@@ -103,8 +87,6 @@ export function getNormalizedChatCharacters() {
             }
             return [];
         } else {
-            // Групповой чат
-            // Используем getGroupMembers() для получения массива объектов персонажей
             const groupMembers = getGroupMembers();
             
             if (!groupMembers || groupMembers.length === 0) {
@@ -112,7 +94,6 @@ export function getNormalizedChatCharacters() {
                 return [];
             }
             
-            // Извлекаем и нормализуем имена персонажей из массива объектов
             const normalizedNames = groupMembers
                 .map(member => member?.name)
                 .filter(name => name && typeof name === 'string')
@@ -126,20 +107,16 @@ export function getNormalizedChatCharacters() {
     }
 }
 
-// Распределение персонажей по слотам из текущего чата
-// Очищает старых персонажей из других чатов
 export async function assignCharactersToSlots() {
-    // Убеждаемся, что слоты инициализированы
     if (slotsState.length === 0) {
         await initializeSlots();
     }
     
-    // Получаем нормализованные имена персонажей текущего чата
     const chatCharacters = getNormalizedChatCharacters();
     
     const totalSlots = slotsState.length;
     
-    // Полностью очищаем все слоты (сохранение должно было произойти до вызова этой функции)
+    // Clear all slots completely (save should have occurred before calling this function)
     for (let i = 0; i < totalSlots; i++) {
         slotsState[i] = createEmptySlot();
     }
@@ -149,21 +126,22 @@ export async function assignCharactersToSlots() {
         return;
     }
     
-    // Распределяем персонажей по слотам: идем по индексу, пока не закончатся либо слоты, либо персонажи
-    // Имена уже нормализованы из getNormalizedChatCharacters()
+    // Assign characters to slots by index until either slots or characters run out
+    // Names are already normalized from getNormalizedChatCharacters()
     for (let i = 0; i < totalSlots && i < chatCharacters.length; i++) {
         slotsState[i] = createSlotWithCharacter(chatCharacters[i]);
     }
     
-    // Обновляем UI
     updateSlotsList();
 }
 
-// Поиск индекса слота для персонажа (если персонаж уже в слоте)
-// @param {string} characterName - Нормализованное имя персонажа
-// @returns {number|null} - Индекс слота или null, если персонаж не найден в слотах
+/**
+ * Find slot index for character (if character is already in slot)
+ * @param {string} characterName - Normalized character name
+ * @returns {number|null} Slot index or null if character not found in slots
+ */
 export function findCharacterSlotIndex(characterName) {
-    // characterName должен быть уже нормализован
+    // characterName must already be normalized
     const index = slotsState.findIndex(slot => {
         const slotName = slot?.characterName;
         return slotName && slotName === characterName;
@@ -172,36 +150,36 @@ export function findCharacterSlotIndex(characterName) {
     return index !== -1 ? index : null;
 }
 
-// Получение слота для персонажа
-// 1. Если персонаж уже в слоте - возвращаем этот слот
-// 2. Если нет - ищем пустой слот, возвращаем его
-// 3. Если пустых нет - освобождаем слот с наименьшим использованием и возвращаем его
-// Функция занимается только управлением слотами, не управляет счетчиком использования
-// @param {string} characterName - Нормализованное имя персонажа (используется как идентификатор)
-// @param {number} minUsageForSave - Минимальное количество использований для сохранения (по умолчанию 2)
-// @param {Set<string>} protectedCharacters - Набор нормализованных имен персонажей, которых нельзя вытеснять (опционально)
+/**
+ * Get slot for character
+ * 1. If character is already in slot - return that slot
+ * 2. If not - find empty slot, return it
+ * 3. If no empty slots - evict slot with least usage and return it
+ * This function only manages slots, it does not manage the usage counter
+ * @param {string} characterName - Normalized character name (used as identifier)
+ * @param {number} minUsageForSave - Minimum usage count for saving (default: 1)
+ * @param {Set<string>} protectedCharacters - Set of normalized character names that cannot be evicted (optional)
+ * @returns {Promise<number|null>} Slot index or null if failed
+ */
 export async function acquireSlot(characterName, minUsageForSave = 1, protectedCharacters = null) {
-    // characterName должен быть уже нормализован
+    // characterName must already be normalized
     
-    // 1. Проверяем, есть ли персонаж уже в слоте - если да, возвращаем этот слот
     const existingIndex = findCharacterSlotIndex(characterName);
     if (existingIndex !== null) {
         updateSlotsList();
         return existingIndex;
     }
     
-    // 2. Персонаж не в слоте - ищем пустой слот
     const freeSlotIndex = slotsState.findIndex(slot => !slot?.characterName);
     if (freeSlotIndex !== -1) {
-        // Найден пустой слот - устанавливаем персонажа туда (храним нормализованное имя)
-        // Счетчик использования всегда начинается с 0, управление счетчиком вне этой функции
+        // Usage counter always starts at 0, counter management is outside this function
         slotsState[freeSlotIndex] = createSlotWithCharacter(characterName);
         updateSlotsList();
         return freeSlotIndex;
     }
     
-    // 3. Пустых слотов нет - находим слот с наименьшим использованием и освобождаем его
-    // Пропускаем защищенных персонажей, если они указаны
+    // Find slot with lowest usage and evict it
+    // Skip protected characters if specified
     let minUsage = Infinity;
     let minUsageIndex = -1;
     
@@ -209,7 +187,6 @@ export async function acquireSlot(characterName, minUsageForSave = 1, protectedC
         const slot = slotsState[i];
         const slotCharacterName = slot?.characterName;
         
-        // Пропускаем защищенных персонажей
         if (protectedCharacters && slotCharacterName && protectedCharacters.has(slotCharacterName)) {
             continue;
         }
@@ -226,22 +203,19 @@ export async function acquireSlot(characterName, minUsageForSave = 1, protectedC
         return null;
     }
     
-    // Освобождаем слот с наименьшим использованием
     const evictedSlot = slotsState[minUsageIndex];
     const evictedCharacter = evictedSlot?.characterName;
     
     if (evictedCharacter && typeof evictedCharacter === 'string') {
         const usageCount = evictedSlot.usage;
         
-        // Сохраняем кеш перед вытеснением только если персонаж использовал слот минимум N раз
+        // Save cache before eviction only if character used slot at least N times
         if (usageCount >= minUsageForSave) {
             await saveCharacterCache(evictedCharacter, minUsageIndex);
         }
     }
     
-    // Устанавливаем персонажа в освобожденный слот
-    // Храним нормализованное имя (characterName уже нормализован)
-    // Счетчик использования всегда начинается с 0, управление счетчиком вне этой функции
+    // Usage counter always starts at 0, counter management is outside this function
     slotsState[minUsageIndex] = createSlotWithCharacter(characterName);
     
     updateSlotsList();
@@ -249,8 +223,6 @@ export async function acquireSlot(characterName, minUsageForSave = 1, protectedC
     return minUsageIndex;
 }
 
-// Обновление UI с информацией о слотах
-// Обновление списка слотов в UI (объединенный виджет)
 export async function updateSlotsList() {
     const slotsListElement = $("#kv-cache-slots-list");
     if (slotsListElement.length === 0) {
@@ -258,7 +230,6 @@ export async function updateSlotsList() {
     }
     
     try {
-        // Получаем информацию о слотах для определения общего количества
         const slotsData = await getAllSlotsInfo();
         const totalSlots = slotsData ? getSlotsCountFromData(slotsData) : 0;
         
@@ -276,14 +247,12 @@ export async function updateSlotsList() {
             
             html += `<li style="margin: 3px 0; display: flex; align-items: center; gap: 5px;">`;
             
-            // Кнопка сохранения (только для занятых слотов)
             if (isUsed) {
                 const saveTitle = t`Save cache for ${characterName}`;
                 html += `<button class="kv-cache-save-slot-button" data-slot-index="${i}" data-character-name="${characterName}" style="background: none; cursor: pointer; padding: 2px 4px; display: inline-flex; align-items: center; color: var(--SmartThemeBodyColor, #888); margin-left: 0;" title="${saveTitle}">`;
                 html += `<i class="fa-solid fa-floppy-disk" style="font-size: 0.85em;"></i>`;
                 html += `</button>`;
             } else {
-                // Пустое место для выравнивания, если слот свободен
                 html += `<span style="width: 20px; display: inline-block;"></span>`;
             }
             
@@ -314,73 +283,59 @@ export async function updateSlotsList() {
     }
 }
 
-// Увеличение счетчика использования слота
 export function incrementSlotUsage(slotIndex) {
     if (slotsState[slotIndex]) {
         slotsState[slotIndex].usage = (slotsState[slotIndex].usage || 0) + 1;
     }
 }
 
-// Установка флага загрузки кеша для слота
 export function setSlotCacheLoaded(slotIndex, loaded = true) {
     if (slotsState[slotIndex]) {
         slotsState[slotIndex].cacheLoaded = loaded;
     }
 }
 
-// Сброс счетчика использования слота
 export function resetSlotUsage(slotIndex) {
     if (slotsState[slotIndex]) {
         slotsState[slotIndex].usage = 0;
     }
 }
 
-// Инициализация previousChatId
 export function initializePreviousChatId() {
     previousChatId = 'unknown';
 }
 
-// Обработка события смены чата
-// Сохраняет кеш текущих персонажей, очищает слоты и распределяет персонажей нового чата
 export async function redistributeCharacters() {
     const currentChatId = getNormalizedChatId();
     const previousChatIdNormalized = previousChatId;
     const extensionSettings = getExtensionSettings();
     
-    // Обновляем previousChatId для следующего события (никогда не присваиваем 'unknown')
+    // Update previousChatId for next event (never assign 'unknown')
     if (currentChatId !== 'unknown') {
         previousChatId = currentChatId;
     }
     
-    // Обрабатываем смену чата
     await processChatChange(previousChatIdNormalized, currentChatId, extensionSettings);
 }
 
-// Внутренняя функция обработки смены чата
-// Сохраняет кеш, очищает слоты и распределяет персонажей нового чата
 async function processChatChange(previousChatIdParam, currentChatId, extensionSettings) {
-    // Проверяем, изменилось ли имя чата (и не меняется ли оно на "unknown")
-    // previousChatId может быть 'unknown' только при первой смене чата
+    // previousChatId can only be 'unknown' on first chat change
     const chatIdChanged = currentChatId !== 'unknown' &&
                           previousChatIdParam !== currentChatId;
     
-    // Если имя чата не изменилось или меняется с/на unknown - не запускаем очистку
     if (!chatIdChanged) {
         return false;
     }
     
-    // Проверяем настройку очистки при смене чата
     if (!extensionSettings.clearOnChatChange) {
         return false;
     }
     
-    // ВАЖНО: Сначала сохраняем кеш для всех персонажей, которые были в слотах
+    // IMPORTANT: Save cache for all characters in slots first
     await saveAllSlotsCache();
     
-    // Затем очищаем все слоты на сервере
     await clearAllSlotsCache();
     
-    // Распределяем персонажей по слотам (групповой режим всегда включен)
     await assignCharactersToSlots();
     
     return true;

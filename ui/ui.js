@@ -1,5 +1,3 @@
-// UI компоненты и уведомления для KV Cache Manager
-
 import { getContext } from "../../../../extensions.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scripts/popup.js';
 import { t } from '../../../../i18n.js';
@@ -11,7 +9,6 @@ import { preloadCharactersCache } from './preload-cache.js';
 import { openLoadPopup } from './load-popup.js';
 import { openPreloadPopup } from './preload-popup.js';
 
-// Показ toast-уведомления
 export function showToast(type, message, title = 'KV Cache Manager') {
     const extensionSettings = getExtensionSettings();
     
@@ -40,21 +37,18 @@ export function showToast(type, message, title = 'KV Cache Manager') {
     }
 }
 
-// Отключение всех кнопок сохранения
 export function disableAllSaveButtons() {
     $("#kv-cache-save-button").prop('disabled', true);
     $("#kv-cache-save-now-button").prop('disabled', true);
     $(".kv-cache-save-slot-button").prop('disabled', true);
 }
 
-// Включение всех кнопок сохранения
 export function enableAllSaveButtons() {
     $("#kv-cache-save-button").prop('disabled', false);
     $("#kv-cache-save-now-button").prop('disabled', false);
     $(".kv-cache-save-slot-button").prop('disabled', false);
 }
 
-// Обработчики для кнопок
 export async function onSaveButtonClick() {
     disableAllSaveButtons();
     try {
@@ -69,7 +63,6 @@ export async function onSaveNowButtonClick() {
     try {
         const success = await saveCache(false);
         if (success) {
-            // Обновляем отображение слотов после сохранения
             const { updateSlotsList } = await import('../core/slot-manager.js');
             updateSlotsList();
         }
@@ -83,7 +76,6 @@ export async function onLoadButtonClick() {
 }
 
 export async function onReleaseAllSlotsButtonClick() {
-    // Показываем попап подтверждения
     const confirmationMessage = `<p style="margin: 10px 0; font-size: 14px;">${t`Are you sure you want to clear all slots?`}</p><p style="margin: 10px 0; font-size: 12px; color: var(--SmartThemeBodyColor, #888);">${t`All data in slots will be deleted.`}</p>`;
     
     const result = await callGenericPopup(
@@ -97,35 +89,28 @@ export async function onReleaseAllSlotsButtonClick() {
         }
     );
     
-    // Выполняем очистку только если пользователь подтвердил
     if (result === POPUP_RESULT.AFFIRMATIVE) {
         await initializeSlots();
         showToast('success', t`All slots cleared`, t`Group Chat Mode`);
     }
 }
 
-// Обработчик кнопки предзагрузки персонажей
 export async function onPreloadCharactersButtonClick() {
-    // Проверяем, что чат групповой
     const context = getContext();
     if (!context || context.groupId === null || context.groupId === undefined) {
         showToast('error', t`Preload is only available for group chats`);
         return;
     }
     
-    // Открываем popup для выбора персонажей
     const selectedCharacters = await openPreloadPopup();
     
     if (!selectedCharacters || selectedCharacters.length === 0) {
-        // Пользователь отменил выбор или не выбрал персонажей
         return;
     }
     
-    // Запускаем предзагрузку
     await preloadCharactersCache(selectedCharacters);
 }
 
-// Функция для показа попапа ввода тега
 export async function showTagInputPopup() {
     const tagInputHTML = `
         <div style="padding: 10px;">
@@ -151,16 +136,12 @@ export async function showTagInputPopup() {
             cancelButton: true,
             wide: false,
             onOpen: async (popup) => {
-                // Небольшая задержка для гарантии, что DOM готов
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Используем jQuery для более надежной работы с событиями
                 const $input = $(popup.content).find('#kv-cache-tag-input');
                 const okButton = popup.okButton;
-                // Изначально отключаем кнопку, так как поле пустое
                 okButton.setAttribute('disabled', 'true');
                 
-                // Функция для обновления состояния кнопки
                 const updateButtonState = () => {
                     const value = $input.val()?.trim() || '';
                     if (value) {
@@ -170,15 +151,12 @@ export async function showTagInputPopup() {
                     }
                 };
                 
-                // Обработчики изменения текста (используем несколько событий для надежности)
                 $input.on('input', updateButtonState);
                 $input.on('keyup', updateButtonState);
                 $input.on('paste', () => {
-                    // Задержка для обработки вставленного текста
                     setTimeout(updateButtonState, 10);
                 });
                 
-                // Обработчик Enter для подтверждения
                 $input.on('keydown', (e) => {
                     if (e.key === 'Enter' && !okButton.hasAttribute('disabled')) {
                         e.preventDefault();
@@ -186,7 +164,6 @@ export async function showTagInputPopup() {
                     }
                 });
                 
-                // Фокусируемся на поле
                 $input.focus();
                 $input.select();
             },
@@ -197,7 +174,7 @@ export async function showTagInputPopup() {
                         tagValue = $input.val()?.trim() || null;
                     }
                 }
-                return true; // Разрешаем закрытие попапа
+                return true;
             }
         }
     );
@@ -206,10 +183,9 @@ export async function showTagInputPopup() {
         return tagValue;
     }
     
-    return null; // Пользователь отменил
+    return null;
 }
 
-// Сохранение кеша для конкретного слота
 export async function onSaveSlotButtonClick(event) {
     const button = $(event.target).closest('.kv-cache-save-slot-button');
     const slotIndex = parseInt(button.data('slot-index'));
@@ -220,8 +196,7 @@ export async function onSaveSlotButtonClick(event) {
         return;
     }
     
-    // Проверяем, что слот действительно занят этим персонажем
-    // characterName из data-атрибута уже нормализован (хранится в slotsState)
+    // characterName from data attribute is already normalized (stored in slotsState)
     const slotsState = getSlotsState();
     const slot = slotsState[slotIndex];
     if (!slot || !slot.characterName || slot.characterName !== characterName) {
@@ -229,7 +204,6 @@ export async function onSaveSlotButtonClick(event) {
         return;
     }
     
-    // Временно отключаем кнопку
     button.prop('disabled', true);
     const originalTitle = button.attr('title');
     button.attr('title', t`Saving...`);
@@ -247,7 +221,6 @@ export async function onSaveSlotButtonClick(event) {
         console.error(`[KV Cache Manager] Error saving slot ${slotIndex}:`, e);
         showToast('error', t`Error saving: ${e.message}`, t`Saving Slot`);
     } finally {
-        // Включаем кнопку обратно
         button.prop('disabled', false);
         button.attr('title', originalTitle);
     }

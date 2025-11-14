@@ -1,22 +1,16 @@
-// API клиент для llama.cpp сервера
-// Содержит только описания эндпоинтов и базовую обработку ошибок
-
 import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
 
 import HttpClient from './http-client.js';
 import { LLAMA_API_TIMEOUTS } from '../settings.js';
 
-/**
- * API клиент для работы с llama.cpp сервером
- */
 class LlamaApi {
     constructor() {
         this.httpClient = new HttpClient();
     }
 
     /**
-     * Получение базового URL сервера
-     * @returns {string} - Базовый URL
+     * Get base server URL
+     * @returns {string} Base URL
      */
     _getBaseUrl() {
         const provided_url = textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
@@ -24,9 +18,9 @@ class LlamaApi {
     }
 
     /**
-     * Формирует полный URL для запроса
-     * @param {string} path - Путь эндпоинта
-     * @returns {string} - Полный URL
+     * Build full URL for request
+     * @param {string} path - Endpoint path
+     * @returns {string} Full URL
      */
     _buildUrl(path) {
         const baseUrl = this._getBaseUrl();
@@ -36,11 +30,11 @@ class LlamaApi {
     }
 
     /**
-     * Получение информации о всех слотах
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 10000)
-     * @returns {Promise<Array|Object|null>} - Информация о слотах или null при ошибке
-     * @throws {Error} - При ошибке запроса
+     * Get information about all slots
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 10000)
+     * @returns {Promise<Array|Object|null>} Slot information or null on error
+     * @throws {Error} On request error
      */
     async getSlots(options = {}) {
         const url = this._buildUrl('slots');
@@ -53,13 +47,13 @@ class LlamaApi {
     }
 
     /**
-     * Сохранение кеша для слота
-     * @param {number} slotId - Индекс слота
-     * @param {string} filename - Имя файла для сохранения
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 300000)
+     * Save cache for slot
+     * @param {number} slotId - Slot index
+     * @param {string} filename - Filename for saving
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 300000)
      * @returns {Promise<void>}
-     * @throws {Error} - При ошибке запроса
+     * @throws {Error} On request error
      */
     async saveSlotCache(slotId, filename, options = {}) {
         const url = this._buildUrl(`slots/${slotId}?action=save`);
@@ -72,13 +66,13 @@ class LlamaApi {
     }
 
     /**
-     * Загрузка кеша для слота
-     * @param {number} slotId - Индекс слота
-     * @param {string} filename - Имя файла для загрузки
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 300000)
+     * Load cache for slot
+     * @param {number} slotId - Slot index
+     * @param {string} filename - Filename to load
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 300000)
      * @returns {Promise<void>}
-     * @throws {Error} - При ошибке запроса
+     * @throws {Error} On request error
      */
     async loadSlotCache(slotId, filename, options = {}) {
         const url = this._buildUrl(`slots/${slotId}?action=restore`);
@@ -91,12 +85,12 @@ class LlamaApi {
     }
 
     /**
-     * Очистка кеша для слота
-     * @param {number} slotId - Индекс слота
-     * @param {Object} options - Опции запроса
-     * @param {number} options.timeout - Таймаут в миллисекундах (по умолчанию 30000)
+     * Clear cache for slot
+     * @param {number} slotId - Slot index
+     * @param {Object} options - Request options
+     * @param {number} options.timeout - Timeout in milliseconds (default: 30000)
      * @returns {Promise<void>}
-     * @throws {Error} - При ошибке запроса
+     * @throws {Error} On request error
      */
     async clearSlotCache(slotId, options = {}) {
         const url = this._buildUrl(`slots/${slotId}?action=erase`);
