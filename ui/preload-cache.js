@@ -160,7 +160,7 @@ export async function preloadCharactersCache(characters) {
             const characterId = character.characterId;
             
             if (!characterId) {
-                console.error(`[KV Cache Manager] [${characterName}] Не найден ID персонажа`);
+                console.error(`[KV Cache Manager] [${characterName}] Character ID not found`);
                 errors.push(`${characterName}: не найден ID персонажа`);
                 // Обновляем статус
                 if (statusMessageId !== null) {
@@ -236,7 +236,7 @@ export async function preloadCharactersCache(characters) {
                                 }
                                 return 'completed';
                             }).catch((e) => {
-                                console.error(`[KV Cache Manager] [${characterName}] Генерация завершена с ошибкой:`, e);
+                                console.error(`[KV Cache Manager] [${characterName}] Generation completed with error:`, e);
                                 // Очищаем интервал при ошибке
                                 if (cancelCheckInterval) {
                                     clearInterval(cancelCheckInterval);
@@ -278,7 +278,7 @@ export async function preloadCharactersCache(characters) {
                     const isTimeout = e.message && (e.message.includes('Таймаут') || e.message.includes('Timeout') || e.message.includes('timeout'));
                     
                     if (!isAbortError && !isTimeout) {
-                        console.error(`[KV Cache Manager] [${characterName}] Исключение в блоке генерации:`, e);
+                        console.error(`[KV Cache Manager] [${characterName}] Exception in generation block:`, e);
                         throw e;
                     }
                 } finally {
@@ -298,7 +298,7 @@ export async function preloadCharactersCache(characters) {
                     if (saved) {
                         preloaded.push(characterName);
                     } else {
-                        console.error(`[KV Cache Manager] [${characterName}] Ошибка сохранения кеша`);
+                        console.error(`[KV Cache Manager] [${characterName}] Error saving cache`);
                         errors.push(`${characterName}: ошибка сохранения кеша`);
                     }
                 }
@@ -324,7 +324,7 @@ export async function preloadCharactersCache(characters) {
                 }
                 
             } catch (e) {
-                console.error(`[KV Cache Manager] Ошибка при предзагрузке для персонажа ${characterName}:`, e);
+                console.error(`[KV Cache Manager] Error preloading cache for character ${characterName}:`, e);
                 errors.push(`${characterName}: ${e.message || 'Неизвестная ошибка'}`);
                 
                 // Обновляем статус при ошибке

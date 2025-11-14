@@ -98,7 +98,7 @@ export async function openPreloadPopup() {
                 // Ищем элементы внутри popup
                 const popupContent = popup.content.querySelector('#kv-cache-preload-popup-content');
                 if (!popupContent) {
-                    console.error('[KV Cache Manager] Не найден контент popup в', popup.content);
+                    console.error('[KV Cache Manager] Popup content not found in', popup.content);
                     return;
                 }
                 
@@ -147,7 +147,7 @@ export async function openPreloadPopup() {
 export function renderPreloadPopupCharacters(context = document) {
     const charactersList = $(context).find("#kv-cache-preload-characters-list");
     if (charactersList.length === 0) {
-        console.error('[KV Cache Manager] Не найден элемент #kv-cache-preload-characters-list в контексте', context);
+        console.error('[KV Cache Manager] Element #kv-cache-preload-characters-list not found in context', context);
         return;
     }
     

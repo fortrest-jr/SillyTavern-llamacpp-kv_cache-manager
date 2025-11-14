@@ -27,7 +27,7 @@ export async function saveSlotCache(slotId, filename, characterName) {
         
         return true;
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка сохранения слота ${slotId}:`, e);
+        console.error(`[KV Cache Manager] Error saving slot ${slotId}:`, e);
         const errorMessage = e.message || 'Unknown error';
         if (errorMessage.includes('Timeout') || errorMessage.includes('timeout')) {
             showToast('error', t`Timeout while saving cache for ${characterName}`);
@@ -52,7 +52,7 @@ export async function loadSlotCache(slotId, filename) {
         
         return true;
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка загрузки кеша слота ${slotId}:`, e);
+        console.error(`[KV Cache Manager] Error loading cache for slot ${slotId}:`, e);
         return false;
     }
 }
@@ -67,7 +67,7 @@ export async function clearSlotCache(slotId) {
         
         return true;
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка очистки слота ${slotId}:`, e);
+        console.error(`[KV Cache Manager] Error clearing slot ${slotId}:`, e);
         return false;
     }
 }
@@ -101,7 +101,7 @@ export async function clearAllSlotsCache() {
                     errors.push(`слот ${slotId}`);
                 }
             } catch (e) {
-                console.error(`[KV Cache Manager] Ошибка при очистке слота ${slotId}:`, e);
+                console.error(`[KV Cache Manager] Error clearing slot ${slotId}:`, e);
                 errors.push(`слот ${slotId}: ${e.message}`);
             }
         }
@@ -118,12 +118,12 @@ export async function clearAllSlotsCache() {
             
             return true;
         } else {
-            console.error(`[KV Cache Manager] Не удалось очистить слоты. Ошибки: ${errors.join(', ')}`);
+            console.error(`[KV Cache Manager] Failed to clear slots. Errors: ${errors.join(', ')}`);
             showToast('error', t`Failed to clear slots. Errors: ${errors.join(', ')}`, t`Cache Clear`);
             return false;
         }
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при очистке всех слотов:', e);
+        console.error('[KV Cache Manager] Error clearing all slots:', e);
         showToast('error', t`Error clearing slots: ${e.message}`, t`Cache Clear`);
         return false;
     }
@@ -158,11 +158,11 @@ export async function saveCharacterCache(characterName, slotIndex) {
             
             return true;
         } else {
-            console.error(`[KV Cache Manager] Не удалось сохранить кеш для персонажа ${characterName}`);
+            console.error(`[KV Cache Manager] Failed to save cache for character ${characterName}`);
             return false;
         }
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка при сохранении кеша для персонажа ${characterName}:`, e);
+        console.error(`[KV Cache Manager] Error saving cache for character ${characterName}:`, e);
         return false;
     }
 }
@@ -260,7 +260,7 @@ export async function saveCache(requestTag = false) {
                 saveErrors.push(characterName);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при сохранении персонажа ${characterName}:`, e);
+            console.error(`[KV Cache Manager] Error saving character ${characterName}:`, e);
             saveErrors.push(`${characterName}: ${e.message}`);
         }
     }

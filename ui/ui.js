@@ -244,7 +244,7 @@ export async function onSaveSlotButtonClick(event) {
             showToast('error', t`Failed to save cache for ${characterName}`, t`Saving Slot`);
         }
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка при сохранении слота ${slotIndex}:`, e);
+        console.error(`[KV Cache Manager] Error saving slot ${slotIndex}:`, e);
         showToast('error', t`Error saving: ${e.message}`, t`Saving Slot`);
     } finally {
         // Включаем кнопку обратно

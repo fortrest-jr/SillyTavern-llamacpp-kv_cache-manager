@@ -40,7 +40,7 @@ export async function getAllSlotsInfo() {
         const slotsData = await llamaApi.getSlots();
         return slotsData;
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка получения информации о слотах:', e);
+        console.error('[KV Cache Manager] Error getting slot information:', e);
         const errorMessage = e.message || String(e);
         showToast('error', t`Error getting slot information: ${errorMessage}`);
         return null;
@@ -88,7 +88,7 @@ export function getNormalizedChatCharacters() {
         const context = getContext();
         
         if (!context) {
-            console.warn('[KV Cache Manager] Не удалось получить контекст чата');
+            console.warn('[KV Cache Manager] Failed to get chat context');
             return [];
         }
         
@@ -108,7 +108,7 @@ export function getNormalizedChatCharacters() {
             const groupMembers = getGroupMembers();
             
             if (!groupMembers || groupMembers.length === 0) {
-                console.warn('[KV Cache Manager] Не найдено участников группового чата');
+                console.warn('[KV Cache Manager] No group chat members found');
                 return [];
             }
             
@@ -121,7 +121,7 @@ export function getNormalizedChatCharacters() {
             return normalizedNames;
         }
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при получении персонажей чата:', e);
+        console.error('[KV Cache Manager] Error getting chat characters:', e);
         return [];
     }
 }
@@ -222,7 +222,7 @@ export async function acquireSlot(characterName, minUsageForSave = 1, protectedC
     }
     
     if (minUsageIndex === -1) {
-        console.warn('[KV Cache Manager] Не удалось найти слот для персонажа (возможно, все слоты заняты защищенными персонажами)');
+        console.warn('[KV Cache Manager] Failed to find slot for character (possibly all slots are occupied by protected characters)');
         return null;
     }
     
@@ -307,7 +307,7 @@ export async function updateSlotsList() {
         
         slotsListElement.html(html);
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при обновлении списка слотов:', e);
+        console.error('[KV Cache Manager] Error updating slots list:', e);
         const errorMessage = e.message || 'Unknown error';
         const errorText = t`Error loading slots: ${errorMessage}`;
         slotsListElement.html(`<p style="color: var(--SmartThemeBodyColor, inherit);">${errorText}</p>`);

@@ -99,7 +99,7 @@ export async function getFilesList() {
         
         return [];
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка получения списка файлов:', e);
+        console.error('[KV Cache Manager] Error getting file list:', e);
         showToast('error', 'Error getting file list: ' + e.message);
         return [];
     }
@@ -111,7 +111,7 @@ export async function deleteFile(filename) {
         await filePluginApi.deleteFile(filename);
         return true;
     } catch (e) {
-        console.warn(`[KV Cache Manager] Ошибка при удалении файла ${filename}:`, e);
+        console.warn(`[KV Cache Manager] Error deleting file ${filename}:`, e);
         return false;
     }
 }
@@ -151,7 +151,7 @@ export async function rotateFiles(filterFn, description, context) {
             }
         }
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка при ротации файлов ${context}:`, e);
+        console.error(`[KV Cache Manager] Error rotating files ${context}:`, e);
     }
 }
 
@@ -292,7 +292,7 @@ export async function getLastCacheForCharacter(characterName, currentChatOnly = 
             filename: lastFile.filename,
         };
     } catch (e) {
-        console.error(`[KV Cache Manager] Ошибка при поиске кеша для персонажа ${characterName}:`, e);
+        console.error(`[KV Cache Manager] Error searching cache for character ${characterName}:`, e);
         return null;
     }
 }
@@ -314,7 +314,7 @@ export async function validateCacheFile(filename, characterName) {
             
             if (fileSizeMB < MIN_FILE_SIZE_MB) {
                 // Файл меньше минимального размера - считаем невалидным и удаляем
-                console.warn(`[KV Cache Manager] Файл ${filename} слишком мал (${fileSizeMB.toFixed(2)} МБ), удаляем как невалидный`);
+                console.warn(`[KV Cache Manager] File ${filename} is too small (${fileSizeMB.toFixed(2)} MB), deleting as invalid`);
                 await deleteFile(filename);
                 showToast('warning', `Файл кеша для ${characterName} слишком мал, не сохранён`);
                 return false;
@@ -323,7 +323,7 @@ export async function validateCacheFile(filename, characterName) {
         
         return true;
     } catch (e) {
-        console.warn(`[KV Cache Manager] Не удалось проверить размер файла ${filename}:`, e);
+        console.warn(`[KV Cache Manager] Failed to check file size for ${filename}:`, e);
         // Продолжаем, даже если не удалось проверить размер
         return true;
     }

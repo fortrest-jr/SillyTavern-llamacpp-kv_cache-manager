@@ -107,7 +107,7 @@ export async function openLoadPopup() {
                 // Ищем элементы внутри popup (popup.content - это HTMLElement)
                 const popupContent = popup.content.querySelector('#kv-cache-load-popup-content');
                 if (!popupContent) {
-                    console.error('[KV Cache Manager] Не найден контент popup в', popup.content);
+                    console.error('[KV Cache Manager] Popup content not found in', popup.content);
                     return;
                 }
                 
@@ -158,7 +158,7 @@ export function closeLoadPopup() {
 export function renderLoadPopupChats(context = document) {
     const chatsList = $(context).find("#kv-cache-load-chats-list");
     if (chatsList.length === 0) {
-        console.error('[KV Cache Manager] Не найден элемент #kv-cache-load-chats-list в контексте', context);
+        console.error('[KV Cache Manager] Element #kv-cache-load-chats-list not found in context', context);
         return;
     }
     
@@ -238,7 +238,7 @@ export function selectLoadPopupChat(chatId, context = document) {
 export function renderLoadPopupFiles(chatId, context = document) {
     const filesList = $(context).find("#kv-cache-load-files-list");
     if (filesList.length === 0) {
-        console.error('[KV Cache Manager] Не найден элемент #kv-cache-load-files-list в контексте', context);
+        console.error('[KV Cache Manager] Element #kv-cache-load-files-list not found in context', context);
         return;
     }
     
@@ -486,7 +486,7 @@ export async function loadSelectedCache() {
             
             characterSlotMap.set(character.characterName, slotIndex);
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при распределении персонажа ${character.characterName}:`, e);
+            console.error(`[KV Cache Manager] Error assigning character ${character.characterName} to slot:`, e);
             errors.push(`${character.characterName}: ${e.message}`);
         }
     }
@@ -526,7 +526,7 @@ export async function loadSelectedCache() {
                 errors.push(t`${character.characterName}: load error`);
             }
         } catch (e) {
-            console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${character.characterName}:`, e);
+            console.error(`[KV Cache Manager] Error loading cache for character ${character.characterName}:`, e);
             errors.push(`${character.characterName}: ${e.message}`);
         }
     }

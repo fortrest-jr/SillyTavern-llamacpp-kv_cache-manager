@@ -57,7 +57,7 @@ export async function editMessageUsingUpdate(messageId, newText) {
     const message = chat[messageId];
     
     if (!message) {
-        console.error('[KV Cache Manager] Сообщение не найдено по ID:', messageId);
+        console.error('[KV Cache Manager] Message not found by ID:', messageId);
         return;
     }
     

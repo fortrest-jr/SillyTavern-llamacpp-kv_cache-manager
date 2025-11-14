@@ -35,7 +35,7 @@ async function checkAndPerformAutoSave(slotIndex, currentUsage) {
         }
     } catch (e) {
         // При ошибке не сбрасываем usage, чтобы попробовать сохранить снова
-        console.error(`[KV Cache Manager] Ошибка при автосохранении кеша для персонажа ${characterName}:`, e);
+        console.error(`[KV Cache Manager] Error auto-saving cache for character ${characterName}:`, e);
     }
 }
 

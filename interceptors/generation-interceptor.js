@@ -101,7 +101,7 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
                     }
                 }
             } catch (e) {
-                console.error(`[KV Cache Manager] Ошибка при загрузке кеша для персонажа ${characterName}:`, e);
+                console.error(`[KV Cache Manager] Error loading cache for character ${characterName}:`, e);
                 showToast('error', t`Error loading cache for ${characterName}: ${e.message}`, t`Generation`);
                 // Не прерываем генерацию при ошибке загрузки кеша
             }
@@ -112,7 +112,7 @@ export async function KVCacheManagerInterceptor(chat, contextSize, abort, type) 
         slotsState[currentSlot].generationType = type;
         
     } catch (error) {
-        console.error('[KV Cache Manager] Ошибка в перехватчике генерации:', error);
+        console.error('[KV Cache Manager] Error in generation interceptor:', error);
         showToast('error', t`Error intercepting generation: ${error.message}`, t`Generation`);
     }
 }

@@ -13,7 +13,7 @@ export function getChatCharactersWithMutedStatus() {
         const context = getContext();
         
         if (!context) {
-            console.warn('[KV Cache Manager] Не удалось получить контекст чата');
+            console.warn('[KV Cache Manager] Failed to get chat context');
             return [];
         }
         
@@ -27,7 +27,7 @@ export function getChatCharactersWithMutedStatus() {
         const groupMembers = getGroupMembers();
         
         if (!groupMembers || groupMembers.length === 0) {
-            console.warn('[KV Cache Manager] Не найдено участников группового чата');
+            console.warn('[KV Cache Manager] No group chat members found');
             return [];
         }
         
@@ -65,7 +65,7 @@ export function getChatCharactersWithMutedStatus() {
         
         return characters;
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при получении персонажей с информацией о мьюте:', e);
+        console.error('[KV Cache Manager] Error getting characters with mute status:', e);
         return [];
     }
 }
@@ -87,7 +87,7 @@ export function getNormalizedCharacterNameFromContext() {
         
         return normalizeCharacterName(character.name);
     } catch (e) {
-        console.error('[KV Cache Manager] Ошибка при получении имени персонажа из контекста:', e);
+        console.error('[KV Cache Manager] Error getting character name from context:', e);
         return null;
     }
 }
