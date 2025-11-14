@@ -6,7 +6,7 @@ import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scrip
 import { getNormalizedChatId, formatTimestampToDate } from '../utils/utils.js';
 import { getFilesList, parseSaveFilename, groupFilesByChatAndCharacter, getLastCacheForCharacter } from '../core/file-manager.js';
 import { getSlotsState, acquireSlot, updateSlotsList } from '../core/slot-manager.js';
-import { loadSlotCache, saveCharacterCache } from '../core/cache-operations.js';
+import { loadSlotCache } from '../core/cache-operations.js';
 import { showToast } from './ui.js';
 import { getExtensionSettings, extensionFolderPath, MIN_USAGE_FOR_SAVE } from '../settings.js';
 
